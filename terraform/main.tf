@@ -122,21 +122,16 @@ resource "aws_security_group" "clipflip" {
   }
 }
 
-# ── Key Pair ────────────────────────────────────────────────
-resource "aws_key_pair" "clipflip" {
-  key_name   = var.key_pair_name
-  public_key = var.ssh_public_key
-
-  tags = {
-    Project = "clipflip"
-  }
+# ── Key Pair (already exists in AWS — reference it) ────────
+data "aws_key_pair" "clipflip" {
+  key_name = var.key_pair_name
 }
 
 # ── EC2 Instance ────────────────────────────────────────────
 resource "aws_instance" "clipflip" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.instance_type
-  key_name                    = aws_key_pair.clipflip.key_name
+  key_name                    = data.aws_key_pair.clipflip.key_name
   subnet_id                   = local.subnet_id
   vpc_security_group_ids      = [aws_security_group.clipflip.id]
   associate_public_ip_address = true
