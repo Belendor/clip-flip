@@ -1,0 +1,29 @@
+# ============================================================
+#  .gitignore — ClipFlip
+# ============================================================
+
+# Secrets — NEVER commit these
+.env
+*.pem
+*.key
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/terraform.tfvars
+terraform/*.tfvars
+terraform/crash.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node (if we add build tools later)
+node_modules/
+dist/

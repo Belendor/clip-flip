@@ -1,0 +1,133 @@
+/* ============================================================
+   ClipFlip — style.css
+============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0a0a12;
+  --surface:   #13131f;
+  --accent:    #7c3aed;
+  --accent-2:  #06b6d4;
+  --text:      #f1f5f9;
+  --muted:     #64748b;
+  --radius:    16px;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Hero ── */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+}
+
+.hero__content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  animation: fadeUp .8s ease both;
+}
+
+/* ── Logo Ring ── */
+.logo-ring {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 48px rgba(124, 58, 237, .5), 0 0 96px rgba(6, 182, 212, .2);
+  animation: pulse 3s ease-in-out infinite;
+}
+
+.logo-icon { font-size: 2.5rem; }
+
+/* ── Title ── */
+.hero__title {
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #fff 30%, var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Subtitle ── */
+.hero__subtitle {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  color: var(--muted);
+  font-weight: 300;
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+/* ── Status Badge ── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem 1.25rem;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, .12);
+  border: 1px solid rgba(124, 58, 237, .3);
+  font-size: .875rem;
+  font-weight: 500;
+  letter-spacing: .02em;
+  backdrop-filter: blur(8px);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+  animation: blink 2s ease-in-out infinite;
+}
+
+/* ── Grid Background ── */
+.grid-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-image:
+    linear-gradient(rgba(124,58,237,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124,58,237,.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+}
+
+/* ── Animations ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 48px rgba(124,58,237,.5), 0 0 96px rgba(6,182,212,.2); }
+  50%       { box-shadow: 0 0 64px rgba(124,58,237,.8), 0 0 128px rgba(6,182,212,.4); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .3; }
+}
