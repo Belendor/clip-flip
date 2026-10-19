@@ -41,19 +41,3 @@ variable "ssh_public_key" {
   description = "SSH public key content (from your .pem file)"
   type        = string
 }
-
-variable "github_username" {
-  description = "GitHub username"
-  type        = string
-}
-
-variable "github_repo" {
-  description = "GitHub repository name (e.g. clip-flip)"
-  type        = string
-}
-
-variable "github_token" {
-  description = "GitHub Personal Access Token"
-  type        = string
-  sensitive   = true
-}

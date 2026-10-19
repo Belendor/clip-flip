@@ -1,30 +1,24 @@
 // ============================================================
 //  Jenkinsfile — ClipFlip CI/CD Pipeline
-//  Triggered by: GitHub webhook on push to main branch
-//  What it does:
-//    1. Checkout code from GitHub
-//    2. Deploy files to /var/www/clipflip (served by Nginx)
-//    3. Reload Nginx
+//  Push to main → build TS + Tailwind → deploy to Nginx
 // ============================================================
 
 pipeline {
     agent any
 
     options {
-        // Keep only last 10 builds to save disk space
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timestamps()
-        timeout(time: 10, unit: 'MINUTES')
+        timeout(time: 15, unit: 'MINUTES')
     }
 
     triggers {
-        // GitHub webhook will trigger this automatically
         githubPush()
     }
 
     environment {
         DEPLOY_DIR = '/var/www/clipflip'
-        REPO_URL   = "https://github.com/Belendor/clip-flip.git"
+        REPO_URL   = 'https://github.com/Belendor/clip-flip.git'
         BRANCH     = 'main'
     }
 
@@ -32,7 +26,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo "📥 Pulling latest code from GitHub..."
+                echo "📥 Pulling latest from GitHub..."
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: "*/${env.BRANCH}"]],
@@ -44,12 +38,24 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Install Dependencies') {
             steps {
-                echo "🔨 Build stage — static site, no compilation needed."
-                echo "   Files in workspace:"
-                sh 'ls -lah'
-                // Future: add minification here (html-minifier, terser, cleancss)
+                echo "📦 Installing npm packages..."
+                sh 'npm ci --prefer-offline 2>&1 || npm install'
+            }
+        }
+
+        stage('Build JS') {
+            steps {
+                echo "⚙️  Webpack production build..."
+                sh 'npm run build:prod'
+            }
+        }
+
+        stage('Build CSS') {
+            steps {
+                echo "🎨 TailwindCSS minified build..."
+                sh 'npm run build:css'
             }
         }
 
@@ -57,13 +63,14 @@ pipeline {
             steps {
                 echo "🚀 Deploying to ${env.DEPLOY_DIR}..."
                 sh """
-                    # Stamp deploy time into HTML data attribute
-                    DEPLOY_TIME=\$(date '+%Y-%m-%d %H:%M UTC')
-                    sed -i 's|<html lang="en">|<html lang="en" data-deploy-time="'\$DEPLOY_TIME'">|' index.html
+                    sudo mkdir -p ${env.DEPLOY_DIR}/dist ${env.DEPLOY_DIR}/src
 
-                    # Sync all files to the web root
-                    sudo mkdir -p ${env.DEPLOY_DIR}
-                    sudo cp -r index.html src/ ${env.DEPLOY_DIR}/
+                    # Deploy HTML + built assets
+                    sudo cp index.html ${env.DEPLOY_DIR}/index.html
+                    sudo cp dist/bundle.js ${env.DEPLOY_DIR}/dist/bundle.js
+                    sudo cp dist/output.css ${env.DEPLOY_DIR}/dist/output.css
+
+                    # Fix permissions
                     sudo chown -R www-data:www-data ${env.DEPLOY_DIR}
                     sudo chmod -R 755 ${env.DEPLOY_DIR}
                 """
@@ -74,21 +81,20 @@ pipeline {
             steps {
                 echo "🔄 Reloading Nginx..."
                 sh 'sudo systemctl reload nginx'
-                echo "✅ Nginx reloaded. Site is live!"
+                echo "✅ Live at http://56.228.95.201"
             }
         }
-
     }
 
     post {
         success {
-            echo "🎉 Deployment successful!"
+            echo "🎉 Deploy successful! Build #${env.BUILD_NUMBER}"
         }
         failure {
-            echo "❌ Deployment FAILED. Check logs above."
+            echo "❌ Build FAILED at stage. Check logs above."
         }
         always {
-            cleanWs() // Clean workspace after each build
+            cleanWs()
         }
     }
 }

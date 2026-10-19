@@ -145,9 +145,8 @@ resource "aws_instance" "clipflip" {
   }
 
   user_data = templatefile("${path.module}/scripts/userdata.sh", {
-    github_repo     = var.github_repo
-    github_username = var.github_username
-    github_token    = var.github_token
+    jenkins_plugins = file("${path.module}/scripts/jenkins-plugins.txt")
+    jenkins_init    = file("${path.module}/scripts/jenkins-init.groovy")
   })
 
   tags = {

@@ -1,28 +1,505 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="ClipFlip — fast, clean, and ready to deploy. Powered by AWS + Jenkins CI/CD." />
-  <link rel="canonical" href="https://clip-flip.com" />
-  <title>ClipFlip</title>
-  <link rel="stylesheet" href="src/style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="keywords" content="front config file" />
+    <meta name="description" content="from config">
+    <meta name="author" content="Project7" />
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <title>from config</title>
+    <!-- Lazy-load full CSS -->
+    <link rel="preload" href="/dist/output.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="/dist/output.css">
+    </noscript>
+    <script src="/dist/bundle.js" defer></script>
+    <meta name="twitter:card" content="player">
+    <meta name="twitter:title" content="from config">
+    <meta name="twitter:player:width" content="1280">
+    <meta name="twitter:player:height" content="720">
+    <meta name="twitter:player" content="https://clip-flip.com/index.html">
+    <meta name="twitter:image" content="https://clip-flip.com/thumbnail.jpg">
+    <meta name="twitter:creator" content="@clipflipcom">
+    <meta name="twitter:description" content="Nonstop free porn clips. Change tags and watch instantly. No signup.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="from config">
+    <meta property="og:description" content="from config">
+    <meta property="og:image" content="https://clip-flip.com/thumbnail.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:url" content="https://clip-flip.com/" />
+    <meta property="og:video:type" content="video/mp4">
+    <meta property="og:video:width" content="1080">
+    <meta property="og:video:height" content="1920">
+    <meta property="og:video:iframe" content="https://clip-flip.com/index.html">
+    <style>
+        :root {
+            --surface-strong: rgba(12, 14, 18, 0.88);
+            --surface-soft: rgba(22, 24, 29, 0.64);
+            --surface-border: rgba(255, 255, 255, 0.14);
+            --surface-highlight: rgba(255, 255, 255, 0.22);
+            --text-primary: #f5f7fb;
+            --text-muted: rgba(245, 247, 251, 0.62);
+            --accent: #8fd3ff;
+            --accent-strong: #5ab8ff;
+            --success: #6ee7b7;
+            --danger: #ff7c7c;
+            --shadow-soft: 0 20px 60px rgba(0, 0, 0, 0.34);
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            min-height: 100dvh;
+            background:
+                radial-gradient(circle at top, rgba(65, 108, 157, 0.22), transparent 24%),
+                radial-gradient(circle at bottom, rgba(255, 255, 255, 0.05), transparent 20%),
+                linear-gradient(180deg, #040507 0%, #0a0c10 100%);
+            overflow: hidden;
+            color: var(--text-primary);
+            font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        }
+
+        #app-root {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            isolation: isolate;
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: #000;
+        }
+
+        .video-section {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at center, rgba(255, 255, 255, 0.03), transparent 38%),
+                #000;
+        }
+
+        .video-grid.single-view {
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr;
+        }
+
+        .video-grid.single-view #section-1 {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .metadata-form {
+            z-index: 3;
+            position: absolute;
+            left: 14px;
+            bottom: max(112px, env(safe-area-inset-bottom, 0px) + 96px);
+            width: min(76vw, 300px);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            background: rgba(10, 13, 18, 0.16);
+            border-radius: 16px;
+            border: 0.5px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+            padding: 10px;
+        }
+
+        .metadata-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .metadata-title-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .tag-section-label {
+            color: rgba(245, 247, 255, 0.96);
+            font-size: 0.88rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .metadata-subtitle {
+            color: rgba(228, 234, 245, 0.72);
+            font-size: 0.72rem;
+            line-height: 1.25;
+        }
+
+        .metadata-tags-panel {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metadata-tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .metadata-editor {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .metadata-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .metadata-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .upload-form {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: max(176px, env(safe-area-inset-bottom, 0px) + 156px);
+            z-index: 6;
+            width: min(calc(100vw - 32px), 360px);
+            padding: 14px;
+            padding-top: 18px;
+            padding-right: 46px;
+            border-radius: 16px;
+            border: 0.5px solid rgba(255, 255, 255, 0.16);
+            background: rgba(12, 15, 20, 0.58);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.16);
+        }
+
+        .upload-close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 0.5px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(244, 247, 255, 0.88);
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+        }
+
+        .upload-close-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.24);
+            transform: translateY(-1px);
+        }
+
+        .upload-form input,
+        .upload-form select {
+            width: 100%;
+            min-height: 34px;
+            margin: 0 0 8px;
+            padding: 0.42rem 0.62rem;
+            border-radius: 10px;
+            border: 0.5px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(244, 247, 255, 0.95);
+            box-sizing: border-box;
+        }
+
+        .upload-form input::placeholder {
+            color: rgba(226, 232, 245, 0.54);
+        }
+
+        .upload-submit-btn {
+            width: 100%;
+            min-height: 34px;
+            border: 0.5px solid rgba(143, 211, 255, 0.26);
+            border-radius: 10px;
+            background: rgba(143, 211, 255, 0.12);
+            color: rgba(247, 251, 255, 0.96);
+            font-weight: 600;
+            transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+            margin-top: 2px;
+        }
+
+        .upload-submit-btn:hover {
+            background: rgba(143, 211, 255, 0.18);
+            border-color: rgba(143, 211, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .ui-wrapper {
+            z-index: 3;
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: max(34px, env(safe-area-inset-bottom, 0px) + 18px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: auto;
+            max-width: min(88vw, 640px);
+            gap: 8px;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 52px;
+            padding: 6px 8px;
+            width: auto;
+            background: rgba(10, 13, 18, 0.16);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            border-radius: 999px;
+            border: 0.5px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            flex-shrink: 0;
+            flex-wrap: nowrap;
+        }
+
+        .toolbar-item {
+            flex: 1 1 auto;
+            min-width: fit-content;
+            max-width: 100%;
+        }
+    </style>
 </head>
+
 <body>
-  <main class="hero">
-    <div class="hero__content">
-      <div class="logo-ring">
-        <span class="logo-icon">⚡</span>
-      </div>
-      <h1 class="hero__title">ClipFlip 2</h1>
-      <p class="hero__subtitle">Your app is live. Jenkins + Nginx + AWS — all wired up.</p>
-      <div class="status-badge">
-        <span class="status-dot"></span>
-        <span>Deployed via CI/CD</span>
-      </div>
+    <div id="login">
+        <div id="google-login"></div>
     </div>
-    <div class="grid-bg"></div>
-  </main>
-  <script src="src/script.js"></script>
+
+    <h1 class="visually-hidden">
+        Free Endless Porn Clips Sorted by Tags on ClipFlip
+    </h1>
+    <main id="app-root" class="app-root">
+        <div class="video-grid single-view" id="video-grid">
+            <div class="video-section" id="section-1">
+                <div class="video-slot slot-a onscreen" id="slot-1-front">
+                    <video class="player" id="v1-front" playsinline muted preload="auto"></video>
+                </div>
+                <div class="video-slot slot-b offscreen-right" id="slot-1-back">
+                    <video class="player" id="v1-back" playsinline muted preload="auto"></video>
+                </div>
+                <div class="navigation-overlay" id="nav-overlay-1">
+                    <div class="nav-zone nav-left" id="nav-left">
+                        <div class="nav-indicator">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M15 18l-6-6 6-6" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="nav-zone nav-center" id="nav-center"></div>
+                    <div class="nav-zone nav-right" id="nav-right">
+                        <div class="nav-indicator">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div id="metaForm1" class="metadata-form hidden"></div>
+            </div>
+
+            <div class="video-section" id="section-2">
+                <div class="video-slot slot-a onscreen" id="slot-2-front">
+                    <video class="player layer-front" id="v2-front" playsinline muted preload="auto"></video>
+                </div>
+                <div class="video-slot slot-b offscreen-right" id="slot-2-back">
+                    <video class="player layer-back" id="v2-back" playsinline muted preload="auto"></video>
+                </div>
+                <div id="metaForm2" class="metadata-form hidden"></div>
+            </div>
+
+            <div class="video-section" id="section-3">
+                <div class="video-slot slot-a onscreen" id="slot-3-front">
+                    <video class="player layer-front" id="v3-front" playsinline muted preload="auto"></video>
+                </div>
+                <div class="video-slot slot-b offscreen-right" id="slot-3-back">
+                    <video class="player layer-back" id="v3-back" playsinline muted preload="auto"></video>
+                </div>
+                <div id="metaForm3" class="metadata-form hidden"></div>
+            </div>
+
+            <div class="video-section" id="section-4">
+                <div class="video-slot slot-a onscreen" id="slot-4-front">
+                    <video class="player layer-front" id="v4-front" playsinline muted preload="auto"></video>
+                </div>
+                <div class="video-slot slot-b offscreen-right" id="slot-4-back">
+                    <video class="player layer-back" id="v4-back" playsinline muted preload="auto"></video>
+                </div>
+                <div id="metaForm4" class="metadata-form hidden"></div>
+            </div>
+        </div>
+
+        <div class="ui-wrapper">
+            <div class="advanced-panel hidden" id="advancedPanel">
+                <div class="p-4 text-white">Advanced Tags &amp; Filters</div>
+            </div>
+            <div class="toolbar" id="toolbar">
+                <button class="advanced-toggle-btn group" id="hideForms" title="Show/Hide Metadata Forms">
+                    <span class="icon-wrapper">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                            </path>
+                        </svg>
+                    </span>
+                </button>
+                <button class="control-btn-square" id="playPauseBtn" title="Play/Pause All Videos">
+                    <span class="icon-pause" id="icon-pause">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M6 4h4v16H6zM14 4h4v16h-4z" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                    <span class="icon-play hidden" id="icon-play">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M5 3l14 9-14 9V3z" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                </button>
+                <div class="search-container">
+                    <input type="text" id="search-input" placeholder="Search tags..." class="search-input-glass">
+                    <span class="search-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </span>
+                </div>
+                <button class="control-btn-square" id="fullScreenBtn" title="Fill Screen">
+                    <span class="icon-enter">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M15 3h6v6M9 21H3v-6M21 15v6h-6M3 9V3h6" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                    <span class="icon-exit hidden">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                </button>
+                <button class="control-btn-square" id="multiScreenBtn" title="Toggle Multi-Screen">
+                    <span class="icon-grid" id="icon-grid">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <rect x="3" y="3" width="7" height="7" />
+                            <rect x="14" y="3" width="7" height="7" />
+                            <rect x="3" y="14" width="7" height="7" />
+                            <rect x="14" y="14" width="7" height="7" />
+                        </svg>
+                    </span>
+                    <span class="icon-single hidden" id="icon-single">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <rect x="3" y="3" width="18" height="18" rx="1" />
+                        </svg>
+                    </span>
+                </button>
+                <button class="control-btn-square is-muted" id="muteBtn" title="Mute/Unmute All Videos">
+                    <span class="icon-sound">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
+                            <path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                    <span class="icon-muted hidden">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
+                            <line x1="23" y1="9" x2="17" y2="15" stroke-linecap="round" stroke-linejoin="round" />
+                            <line x1="17" y1="9" x2="23" y2="15" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                </button>
+                <button class="control-btn-square" id="reloadBtn" title="Reload Player">
+                    <span class="icon-reload">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M21 12a9 9 0 1 1-3-6.7" stroke-linecap="round" stroke-linejoin="round" />
+                            <polyline points="21 3 21 9 15 9" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                </button>
+                <button class="control-btn-square" id="uploadVideoBtn" title="Upload Video">
+                    <span class="icon-upload">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                            <path d="M12 16V4" stroke-linecap="round" />
+                            <path d="m7 9 5-5 5 5" stroke-linecap="round" stroke-linejoin="round" />
+                            <path d="M5 20h14" stroke-linecap="round" />
+                        </svg>
+                    </span>
+                </button>
+            </div>
+        </div>
+        <div id="no-videos-box" hidden>
+            <p class="no-videos-text">
+                No more videos found for selected tags.<br>
+                Select a tag below to remove it.
+            </p>
+            <div id="active-tags"></div>
+            <div id="reset-section">
+                <p class="reset-info">
+                    You have watched all available videos.<br>
+                    Reset your progress to clear cached data and watch everything again.
+                </p>
+                <button id="reset-btn">Reset progress &amp; watch again</button>
+            </div>
+        </div>
+    </main>
+    <noscript>
+        <p>This app requires JavaScript.</p>
+        <img src="/thumbnails/preview.jpg" alt="Static thumbnail of video interface" />
+    </noscript>
 </body>
+
 </html>
