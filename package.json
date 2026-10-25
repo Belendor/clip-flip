@@ -18,12 +18,17 @@
     "generate-tags": "tsx src/generate-tag-pages.ts"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
     "@types/node": "^20.19.42",
     "autoprefixer": "^10.4.21",
     "concurrently": "^8.2.2",
     "live-server": "^1.2.2",
     "postcss": "^8.5.6",
     "postcss-loader": "^8.1.1",
+    "prisma": "^5.19.1",
     "tailwindcss": "^4.1.11",
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
@@ -36,7 +41,15 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@prisma/client": "^5.19.1",
     "@tailwindcss/cli": "^4.1.11",
+    "axios": "^1.7.2",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "form-data": "^4.0.0",
+    "google-auth-library": "^9.11.0",
+    "multer": "^1.4.5-lts.1",
     "path-browserify": "^1.0.1",
     "sqlite3": "^5.1.7",
     "util": "^0.12.5"

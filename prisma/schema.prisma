@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Video {
+  id          Int     @id @default(autoincrement())
+  title       String?
+  seriesNr    Int?
+  seriesTotal Int?
+  studio      String?
+
+  reactions   VideoReaction[]
+  models      Model[] @relation("VideoModels")
+  tags        Tag[]   @relation("VideoTags")
+}
+
+model NewVideo {
+  id          Int     @id @default(autoincrement())
+  title       String?
+  seriesNr    Int?
+  seriesTotal Int?
+  studio      String?
+
+  startTime   Float
+  endTime     Float
+
+  models      Model[] @relation("NewVideoModels")
+  tags        Tag[]   @relation("NewVideoTags")
+}
+
+model VideoReaction {
+  userId    Int
+  videoId   Int
+  type      String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, videoId])
+}
+
+model Tag {
+  id        Int        @id @default(autoincrement())
+  title     String?    @unique
+  videos    Video[]    @relation("VideoTags")
+  newVideos NewVideo[] @relation("NewVideoTags")
+}
+
+model Model {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  alias     String?
+  videos    Video[]    @relation("VideoModels")
+  newVideos NewVideo[] @relation("NewVideoModels")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  googleId  String   @unique
+  email     String   @unique
+  name      String?
+  picture   String?
+
+  reactions VideoReaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
