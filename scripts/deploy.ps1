@@ -6,21 +6,22 @@
 $ErrorActionPreference = "Stop"
 
 $EC2_IP = "56.228.95.201"
-$SSH_KEY = "$PSScriptRoot\..\ClipFlipkey.pem"
+$SSH_KEY = Join-Path $PSScriptRoot "..\ClipFlipkey.pem"
 
 if (-not (Test-Path $SSH_KEY)) {
-    # Check Downloads folder as fallback
-    $SSH_KEY = "$env:USERPROFILE\Downloads\ClipFlipkey.pem"
+    $SSH_KEY = Join-Path $env:USERPROFILE "Downloads\ClipFlipkey.pem"
 }
 
 if (-not (Test-Path $SSH_KEY)) {
     Write-Error "Could not find ClipFlipkey.pem at root or in Downloads folder."
+    exit 1
 }
 
-Write-Host "📡 Pushing latest changes to GitHub..." -ForegroundColor Cyan
+Write-Host "[1/3] Pushing latest changes to GitHub..." -ForegroundColor Cyan
 git push origin main
 
-Write-Host "🚀 Triggering deployment on EC2 ($EC2_IP)..." -ForegroundColor Cyan
-ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$EC2_IP "chmod +x /home/ubuntu/clip-flip/scripts/server-deploy.sh && /home/ubuntu/clip-flip/scripts/server-deploy.sh"
+Write-Host "[2/3] Connecting to EC2 ($EC2_IP) and executing deployment..." -ForegroundColor Cyan
+$remoteCmd = "cd /home/ubuntu/clip-flip; git pull origin main; chmod +x scripts/server-deploy.sh; bash scripts/server-deploy.sh"
+ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$EC2_IP $remoteCmd
 
-Write-Host "🎉 Successfully deployed! Check http://$EC2_IP" -ForegroundColor Green
+Write-Host "[3/3] Successfully deployed! Live at http://$EC2_IP" -ForegroundColor Green
