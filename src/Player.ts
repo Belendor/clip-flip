@@ -31,7 +31,16 @@ class Players {
         this.user.init();
     }
 
+    showLoader() {
+        document.getElementById("video-loader")?.classList.remove("hidden");
+    }
+
+    hideLoader() {
+        document.getElementById("video-loader")?.classList.add("hidden");
+    }
+
     async init() {
+        this.showLoader();
         this.attachEventListeners();
         this.attachMetadataTabListeners();
         await Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
@@ -39,6 +48,7 @@ class Players {
     }
 
     async loadVideos(): Promise<void> {
+        this.showLoader();
         const revision = ++this.loadRevision;
         this.state.clearEmptyState();
         this.html.hideNoVideosBox();
@@ -48,7 +58,12 @@ class Players {
         const results = await Promise.all(sections.map(section => this.loadSection(section, revision)));
 
         if (revision !== this.loadRevision) return;
-        if (results.some(result => !result)) return;
+        if (results.some(result => !result)) {
+            this.hideLoader();
+            this.showNoVideosBox();
+            return;
+        }
+        this.hideLoader();
     }
 
     private getVisibleSections(): SectionId[] {
@@ -774,30 +789,46 @@ class Players {
     }
 
     showNoVideosBox() {
+        this.hideLoader();
         this.state.advancedMode = false;
         this.html.videoPlayers.forEach((player) => { this.resetPlayer(player); });
 
         const box = document.getElementById("no-videos-box") as HTMLDivElement | null;
+        const title = document.getElementById("no-videos-title") as HTMLParagraphElement | null;
         const tagsBox = document.getElementById("active-tags") as HTMLDivElement | null;
         const resetWrapper = document.getElementById("reset-section") as HTMLDivElement | null;
         const resetInfo = resetWrapper?.querySelector(".reset-info") as HTMLParagraphElement | null;
         const resetBtn = resetWrapper?.querySelector("#reset-btn") as HTMLButtonElement | null;
 
-        if (!box || !tagsBox || !resetInfo || !resetBtn) return;
+        if (!box || !tagsBox || !resetWrapper || !resetInfo || !resetBtn) return;
 
         tagsBox.innerHTML = "";
-        const uniqueTags = [...new Set(this.state.activeTags.get(1) ?? [])].map((title) => ({ title }));
-        void this.html.renderTags(tagsBox, uniqueTags, 1, undefined, async (tag) => {
-            box.setAttribute("hidden", "");
-            await this.toggleTag(tag, true);
-        });
+        const activeTagList = this.state.activeTags.get(1) ?? [];
+
+        if (activeTagList.length > 0) {
+            if (title) title.innerHTML = "No more videos found for selected tags.<br>Select a tag below to remove it.";
+            const uniqueTags = [...new Set(activeTagList)].map((title) => ({ title }));
+            void this.html.renderTags(tagsBox, uniqueTags, 1, undefined, async (tag) => {
+                box.setAttribute("hidden", "");
+                await this.toggleTag(tag, true);
+            });
+            resetWrapper.style.display = "block";
+        } else {
+            if (this.state.getPlayedVideos().size > 0) {
+                if (title) title.innerHTML = "You have watched all available videos.<br>Reset your progress to clear cached data and watch everything again.";
+                resetWrapper.style.display = "block";
+            } else {
+                if (title) title.innerHTML = "No videos found.";
+                resetWrapper.style.display = "none";
+            }
+        }
 
         resetInfo.textContent = "You have watched all available videos. Reset your progress to clear cached data and watch everything again.";
-        resetBtn.onclick = () => {
+        resetBtn.onclick = async () => {
             resetBtn.disabled = true;
             resetBtn.textContent = "Resetting...";
             box.setAttribute("hidden", "");
-            this.state.resetVideoProgress();
+            await this.state.resetVideoProgress();
             this.metadataCache.clear();
             void this.loadVideos();
         };
@@ -830,11 +861,15 @@ class Players {
 
         if (!reset) return;
 
+        this.showLoader();
         this.state.clearEmptyState();
         this.html.hideNoVideosBox();
         this.metadataCache.clear();
         await this.state.fetchVideosByTags(1);
-        if (await this.tryPreserveCurrentVideoOnTagChange(1)) return;
+        if (await this.tryPreserveCurrentVideoOnTagChange(1)) {
+            this.hideLoader();
+            return;
+        }
         await this.loadVideos();
     }
 

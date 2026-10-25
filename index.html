@@ -932,10 +932,13 @@
                 </button>
             </div>
         </div>
+        <div id="video-loader" class="video-loader-overlay">
+            <div class="video-loader-spinner"></div>
+            <p class="video-loader-text">Loading videos...</p>
+        </div>
         <div id="no-videos-box" hidden>
-            <p class="no-videos-text">
-                No more videos found for selected tags.<br>
-                Select a tag below to remove it.
+            <p class="no-videos-text" id="no-videos-title">
+                No videos found.
             </p>
             <div id="active-tags"></div>
             <div id="reset-section">

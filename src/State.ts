@@ -60,10 +60,10 @@ class State {
 
     private createInitialPositions(): PositionsMap {
         return {
-            1: this.randomized ? this.randomInRange(1, this.endIndex) : 1,
-            2: this.randomized ? this.randomInRange(this.endIndex * 0.25, this.endIndex * 0.5) : 500,
-            3: this.randomized ? this.randomInRange(this.endIndex * 0.5, this.endIndex * 0.75) : 1000,
-            4: this.randomized ? this.randomInRange(this.endIndex * 0.75, this.endIndex) : 1500,
+            1: 0,
+            2: 0,
+            3: 0,
+            4: 0,
         };
     }
 
@@ -120,12 +120,18 @@ class State {
         localStorage.removeItem(this.PLAYED_KEY);
     }
 
-    resetVideoProgress() {
+    async resetVideoProgress(): Promise<void> {
         console.log("Resetting video cache & progress");
         this.played.clear();
         this.clearEmptyState();
-        localStorage.clear();
-        this.positions = this.createInitialPositions();
+        localStorage.removeItem(this.PLAYED_KEY);
+        localStorage.removeItem(this.HISTORY_KEY);
+        const tags = this.activeTags.get(1);
+        if (tags && tags.length > 0) {
+            await this.fetchVideosByTags(1);
+        } else {
+            await this.fetchAllVideos();
+        }
     }
 
     async queryTags(): Promise<void> {
@@ -150,8 +156,8 @@ class State {
         }
         if (!queryTagsRaw) {
             this.resetActiveTags();
-            this.taggedVideos = null;
-            console.log("No URL tags found, showing all videos");
+            await this.fetchAllVideos();
+            console.log("No URL tags found, fetched all videos from DB");
             return;
         }
 
@@ -227,7 +233,7 @@ class State {
             return;
         }
 
-        // Tagged
+        // Tagged / DB videos
         if (this.taggedVideos != null) {
             if (this.taggedVideos.length === 0) { this.positions[section] = 0; return; }
             const availableTagged = this.taggedVideos.filter((video) => !this.played.has(video.id));
@@ -246,15 +252,38 @@ class State {
             return;
         }
 
-        // Default untagged
-        if (this.randomized) {
-            const roll = Math.random() * 100;
-            if (roll < this.percentChance) {
-                this.positions[section] = Math.floor(Math.random() * this.endIndex) + 1;
+        // Untagged fallback (if no videos loaded from DB yet)
+        this.positions[section] = 0;
+    }
+
+    async fetchAllVideos(): Promise<void> {
+        this.played = this.getPlayedVideos();
+        this.clearEmptyState();
+        try {
+            const videos = await this.api.fetchVideos();
+            const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id));
+            this.taggedVideos = unwatchedVideos;
+
+            if (unwatchedVideos.length === 0) {
+                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
                 return;
             }
+
+            const initialVideo = this.randomized
+                ? unwatchedVideos[Math.floor(Math.random() * unwatchedVideos.length)]
+                : unwatchedVideos[0];
+
+            this.positions = {
+                1: initialVideo.id,
+                2: initialVideo.id,
+                3: initialVideo.id,
+                4: initialVideo.id,
+            };
+        } catch (error) {
+            console.error("Failed to fetch all videos from API", error);
+            this.taggedVideos = [];
+            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
         }
-        this.positions[section] = this.positions[section] + 1 > this.endIndex ? 1 : this.positions[section] + 1;
     }
 
     async fetchVideosByTags(section: SectionId): Promise<void> {
@@ -264,16 +293,21 @@ class State {
         this.clearEmptyState();
 
         if (!tags || tags.length === 0) {
-            this.taggedVideos = null;
-            this.positions = this.createInitialPositions();
+            await this.fetchAllVideos();
             return;
         }
 
         try {
             const videos = await this.api.fetchVideosByTags(tags, this.endIndex);
-            const unwatchedVideos = videos.filter((video) => !this.played.has(video.id));
+            const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id));
             this.taggedVideos = unwatchedVideos;
-            const randomVideo = videos[Math.floor(Math.random() * videos.length)];
+
+            if (unwatchedVideos.length === 0) {
+                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                return;
+            }
+
+            const randomVideo = unwatchedVideos[Math.floor(Math.random() * unwatchedVideos.length)];
             this.positions = { 1: randomVideo.id, 2: randomVideo.id, 3: randomVideo.id, 4: randomVideo.id };
         } catch (error) {
             console.error(`Failed to fetch videos for section ${section} with tags`, tags, error);
