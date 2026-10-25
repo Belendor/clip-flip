@@ -124,6 +124,7 @@ class Players {
 
     private async queuePlayer(player: HTMLVideoElement, videoId: number): Promise<void> {
         this.configurePlayer(player, videoId, "auto");
+        void this.primePlayer(player);
     }
 
     private buildVideoUrl(videoId: number): string {
@@ -380,8 +381,18 @@ class Players {
 
     private attachPlayerListeners() {
         this.html.videoPlayers.forEach((player, index) => {
-            player.addEventListener("ended", () => { this.handlePlayerEnded(index as PlayerIndex); });
-            player.addEventListener("click", () => { this.togglePlayPause(index as PlayerIndex); });
+            const playerIndex = index as PlayerIndex;
+            const section = (Math.floor(playerIndex / 2) + 1) as SectionId;
+
+            player.addEventListener("timeupdate", () => {
+                if (!this.state.active[playerIndex] || this.pendingSwap[section]) return;
+                if (player.duration > 0 && player.duration - player.currentTime <= 0.12) {
+                    void this.handlePlayerEnded(playerIndex);
+                }
+            });
+
+            player.addEventListener("ended", () => { void this.handlePlayerEnded(playerIndex); });
+            player.addEventListener("click", () => { this.togglePlayPause(playerIndex); });
             player.addEventListener("dblclick", () => { void this.toggleFullscreen(); });
         });
     }
@@ -457,8 +468,13 @@ class Players {
     private async primePlayer(video: HTMLVideoElement): Promise<void> {
         const ready = await this.waitForVideoReady(video);
         if (!ready) return;
-        try { await video.play(); video.pause(); video.currentTime = 0; }
-        catch (error) { console.warn("Failed to prime queued video", error); }
+        try {
+            if (video.currentTime === 0) {
+                video.currentTime = 0.001;
+            }
+        } catch (error) {
+            console.warn("Failed to prime queued video", error);
+        }
     }
 
     private async handlePlayerEnded(playerIndex: PlayerIndex) {
@@ -479,10 +495,26 @@ class Players {
             const nextVideoId = this.getPlayerVideoId(nextPlayer);
             if (!nextVideoId) { this.state.markEmpty(); return; }
 
-            await this.waitForVideoReady(nextPlayer);
-            await this.playPlayer(nextPlayer, nextIndex);
-            this.setSectionActivePlayer(section, nextIndex);
-            currentPlayer.pause();
+            try {
+                await nextPlayer.play();
+                this.state.playing[nextIndex] = true;
+            } catch (error) {
+                console.warn("Play next video failed:", error);
+            }
+
+            const performHandoff = () => {
+                this.setSectionActivePlayer(section, nextIndex);
+                currentPlayer.pause();
+                currentPlayer.currentTime = 0;
+            };
+
+            if ("requestVideoFrameCallback" in nextPlayer) {
+                (nextPlayer as any).requestVideoFrameCallback(() => {
+                    performHandoff();
+                });
+            } else {
+                performHandoff();
+            }
 
             this.getVideoMetadata(nextVideoId)
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))

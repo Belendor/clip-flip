@@ -884,11 +884,11 @@ body {
     width: 100%;
     height: 100%;
     z-index: 1;
-    visibility: hidden;
-    opacity: 1;
-    transform: none;
-    transition: visibility 0s linear 0s;
-    will-change: auto;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateZ(0);
+    transition: opacity 0.08s ease-out;
+    will-change: opacity, z-index;
 }
 
 .video-slot video {
@@ -899,12 +899,14 @@ body {
 
 .video-slot.onscreen {
     z-index: 2;
-    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .video-slot.offscreen-right {
     z-index: 1;
-    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .player {
