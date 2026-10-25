@@ -1,13 +1,13 @@
 const isBrowser = typeof window !== 'undefined';
-const prodDomain = "https://clip-flip.com";
-const apiURL = "https://clip-flip.com/api";
+const prodDomain = isBrowser ? window.location.origin : "https://clip-flip.com";
+const apiURL = "/api";
 
 const endIndex = 13642;
 
-const videoPath    = `${prodDomain}/video/`;
-const videoPath1   = `${prodDomain}/video1/`;
-const videoPathNew = `${prodDomain}/video1/new/`;
-const thumbnailPath = `${prodDomain}/thumbnails/`;
+const videoPath    = "/video/";
+const videoPath1   = "/video1/";
+const videoPathNew = "/video1/new/";
+const thumbnailPath = "/thumbnails/";
 
 export const config = {
     baseUrl:             prodDomain,
