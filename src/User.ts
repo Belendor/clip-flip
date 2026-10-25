@@ -155,9 +155,13 @@ export default class User {
         if (!div || !this.currentUser) return;
         div.innerHTML = "";
 
-        const userPill = document.createElement("div");
+        const container = document.createElement("div");
+        container.className = "user-menu-container";
+
+        const userPill = document.createElement("button");
+        userPill.type = "button";
         userPill.className = "google-user-pill";
-        userPill.title = `${this.currentUser.email} (Click to sign out)`;
+        userPill.title = this.currentUser.email;
 
         const avatar = document.createElement("img");
         avatar.src = this.currentUser.picture || "/favicon.png";
@@ -168,22 +172,85 @@ export default class User {
         nameLabel.className = "user-name";
         nameLabel.textContent = this.currentUser.name?.split(" ")[0] || "Account";
 
-        const logoutIcon = document.createElement("span");
-        logoutIcon.className = "logout-indicator";
-        logoutIcon.innerHTML = `&times;`;
-        logoutIcon.title = "Sign out";
+        const chevron = document.createElement("span");
+        chevron.className = "user-menu-chevron";
+        chevron.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13">
+                <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `;
 
         userPill.appendChild(avatar);
         userPill.appendChild(nameLabel);
-        userPill.appendChild(logoutIcon);
+        userPill.appendChild(chevron);
 
-        userPill.onclick = () => {
-            if (confirm(`Sign out of ${this.currentUser?.email}?`)) {
-                void this.logout();
+        // Dropdown menu
+        const dropdown = document.createElement("div");
+        dropdown.className = "user-dropdown-menu hidden";
+
+        const header = document.createElement("div");
+        header.className = "user-dropdown-header";
+        const emailSpan = document.createElement("div");
+        emailSpan.className = "user-dropdown-email";
+        emailSpan.textContent = this.currentUser.email;
+        header.appendChild(emailSpan);
+
+        const divider = document.createElement("div");
+        divider.className = "user-dropdown-divider";
+
+        const linksList = document.createElement("div");
+        linksList.className = "user-dropdown-links";
+
+        // First link: Log Out
+        const logoutBtn = document.createElement("button");
+        logoutBtn.type = "button";
+        logoutBtn.className = "user-dropdown-item dropdown-item-danger";
+        logoutBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="dropdown-icon">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/>
+                <polyline points="16 17 21 12 16 7" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="21" y1="12" x2="9" y2="12" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Log Out</span>
+        `;
+        logoutBtn.onclick = (e) => {
+            e.stopPropagation();
+            dropdown.classList.add("hidden");
+            chevron.classList.remove("is-open");
+            void this.logout();
+        };
+
+        linksList.appendChild(logoutBtn);
+
+        dropdown.appendChild(header);
+        dropdown.appendChild(divider);
+        dropdown.appendChild(linksList);
+
+        // Toggle dropdown on pill click
+        userPill.onclick = (e) => {
+            e.stopPropagation();
+            const isOpen = !dropdown.classList.contains("hidden");
+            if (isOpen) {
+                dropdown.classList.add("hidden");
+                chevron.classList.remove("is-open");
+            } else {
+                dropdown.classList.remove("hidden");
+                chevron.classList.add("is-open");
             }
         };
 
-        div.appendChild(userPill);
+        // Close when clicking outside
+        const closeDropdown = (e: MouseEvent) => {
+            if (!container.contains(e.target as Node)) {
+                dropdown.classList.add("hidden");
+                chevron.classList.remove("is-open");
+            }
+        };
+        document.addEventListener("click", closeDropdown);
+
+        container.appendChild(userPill);
+        container.appendChild(dropdown);
+        div.appendChild(container);
     }
 
     async logout() {
