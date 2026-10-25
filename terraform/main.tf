@@ -1,6 +1,6 @@
 # ============================================================
 #  Terraform — main.tf
-#  ClipFlip: EC2 + Nginx + Jenkins on existing VPC
+#  ClipFlip: EC2 + Nginx on existing VPC
 # ============================================================
 
 terraform {
@@ -36,7 +36,6 @@ data "aws_subnets" "public" {
   }
 }
 
-# Fallback: get ALL subnets if none have auto-assign public IP
 data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
@@ -45,7 +44,6 @@ data "aws_subnets" "all" {
 }
 
 locals {
-  # Use first public subnet; fall back to any subnet
   subnet_id = length(data.aws_subnets.public.ids) > 0 ? (
     sort(data.aws_subnets.public.ids)[0]
   ) : sort(data.aws_subnets.all.ids)[0]
@@ -70,7 +68,7 @@ data "aws_ami" "ubuntu" {
 # ── Security Group ──────────────────────────────────────────
 resource "aws_security_group" "clipflip" {
   name        = "clipflip-sg"
-  description = "ClipFlip: SSH, HTTP, Jenkins"
+  description = "ClipFlip: SSH, HTTP, HTTPS"
   vpc_id      = data.aws_vpc.main.id
 
   # SSH
@@ -87,15 +85,6 @@ resource "aws_security_group" "clipflip" {
     description = "HTTP"
     from_port   = 80
     to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Jenkins
-  ingress {
-    description = "Jenkins"
-    from_port   = 8080
-    to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -136,7 +125,6 @@ resource "aws_instance" "clipflip" {
   vpc_security_group_ids      = [aws_security_group.clipflip.id]
   associate_public_ip_address = true
 
-  # Root volume — 20 GB gp3 is cheapest SSD
   root_block_device {
     volume_type           = "gp3"
     volume_size           = 20
@@ -144,10 +132,7 @@ resource "aws_instance" "clipflip" {
     encrypted             = true
   }
 
-  user_data = templatefile("${path.module}/scripts/userdata.sh", {
-    jenkins_plugins = file("${path.module}/scripts/jenkins-plugins.txt")
-    jenkins_init    = file("${path.module}/scripts/jenkins-init.groovy")
-  })
+  user_data = file("${path.module}/scripts/userdata.sh")
 
   tags = {
     Name    = "clipflip-server"
@@ -155,11 +140,11 @@ resource "aws_instance" "clipflip" {
   }
 
   lifecycle {
-    ignore_changes = [ami] # Don't reprovision on AMI update
+    ignore_changes = [ami]
   }
 }
 
-# ── Elastic IP (so public IP survives stop/start) ──────────
+# ── Elastic IP ─────────────────────────────────────────────
 resource "aws_eip" "clipflip" {
   instance = aws_instance.clipflip.id
   domain   = "vpc"

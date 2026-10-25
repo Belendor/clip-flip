@@ -8,13 +8,8 @@ output "instance_id" {
 }
 
 output "public_ip" {
-  description = "Elastic IP — point your DNS here"
+  description = "Public IP — point your DNS here"
   value       = aws_eip.clipflip.public_ip
-}
-
-output "jenkins_url" {
-  description = "Jenkins dashboard URL"
-  value       = "http://${aws_eip.clipflip.public_ip}:8080"
 }
 
 output "app_url" {
