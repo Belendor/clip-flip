@@ -146,25 +146,29 @@ export default class HTML {
 
         tags.forEach((tag, index) => {
             const button = document.createElement("button");
+            button.type = "button";
             button.className = `tag-button section-tag-${section}`;
-            button.classList.add(
-                "px-2", "py-1", "text-base", "font-semibold", "rounded-2xl",
-                "bg-black/30", "backdrop-blur-lg", "border", "border-white/40",
-                "text-white", "shadow-md", "hover:bg-black/50", "hover:scale-105",
-                "transition-all", "duration-200", "ease-out",
-            );
+            button.dataset.tag = tag.title;
+            button.dataset.section = String(section);
+
+            const isActive = this.state.activeTags.get(section)?.includes(tag.title) ?? false;
+            if (isActive) {
+                button.classList.add("active-tag");
+            }
+            button.setAttribute("aria-pressed", String(isActive));
 
             if (index >= visibleCount) {
                 button.classList.add("hidden-tag", "hidden");
             }
 
-            if (this.state.activeTags.get(section)?.includes(tag.title)) {
-                button.classList.add("active-tag");
-            }
+            const checkSpan = document.createElement("span");
+            checkSpan.className = "tag-check-icon";
+            checkSpan.innerHTML = "&#10003;";
 
             const textSpan = document.createElement("span");
+            textSpan.className = "tag-label";
             textSpan.textContent = tag.title;
-            button.appendChild(textSpan);
+            button.append(checkSpan, textSpan);
 
             button.addEventListener("click", (event) => {
                 event.stopPropagation();
@@ -172,9 +176,10 @@ export default class HTML {
             });
 
             const deleteButton = document.createElement("span");
-            deleteButton.className = "tag-delete ml-2 px-1 hover:text-red-500 transition-colors cursor-pointer font-bold";
+            deleteButton.className = "tag-delete";
             deleteButton.classList.toggle("hidden", !this.state.advancedMode);
             deleteButton.innerHTML = "&times;";
+            deleteButton.title = `Remove tag "${tag.title}"`;
             deleteButton.addEventListener("click", async (event) => {
                 event.preventDefault();
                 event.stopPropagation();

@@ -5,17 +5,18 @@ import { VideoWithRelations } from "../types";
 import VideoApi from "../VideoApi";
 
 export default class Metadata {
-    state: State
-    html: HTML
-    api: VideoApi
-    metaDataEdit: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null }
-    metaData: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null }
-    metaVisible: { [key: number]: boolean | null } = { 1: null, 2: null, 3: null, 4: null }
-    metaDataTabs: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null }
-    metaDataInputs: { [key: number]: HTMLDivElement[] | null } = { 1: [], 2: [], 3: [], 4: [] }
+    state: State;
+    html: HTML;
+    api: VideoApi;
+    metaDataEdit: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    metaData: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    metaVisible: { [key: number]: boolean | null } = { 1: null, 2: null, 3: null, 4: null };
+    metaDataTabs: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    metaDataInputs: { [key: number]: HTMLDivElement[] | null } = { 1: [], 2: [], 3: [], 4: [] };
     uploadFormWrapper: HTMLDivElement | null = null;
     uploadTagSelect: HTMLSelectElement | null = null;
     private uploadToolbarButton: HTMLButtonElement | null = null;
+
     private readonly editIcon = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M12 20h9" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -31,10 +32,10 @@ export default class Metadata {
         </svg>`;
 
     constructor(html: HTML, state: State, api: VideoApi) {
-        this.html = html
-        this.state = state
-        this.api = api
-        this.init()
+        this.html = html;
+        this.state = state;
+        this.api = api;
+        this.init();
     }
 
     async init() {
@@ -43,33 +44,116 @@ export default class Metadata {
             2: this.state.multiSection,
             3: this.state.multiSection,
             4: this.state.multiSection,
-        }
+        };
         this.state.sectionIds.forEach((section) => {
             if (!this.state.multiSection && section !== 1) return;
             const sectionElement = document.getElementById(`section-${section}`);
             if (!sectionElement) throw new Error(`Section element for section ${section} not found`);
-            this.createMetadataForm(section)
-        })
+            this.createMetadataForm(section);
+        });
+    }
+
+    private makeDraggable(element: HTMLElement, handle: HTMLElement) {
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+        let initialLeft = 0;
+        let initialTop = 0;
+
+        const onPointerDown = (e: MouseEvent | TouchEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.closest("button, input, select, textarea, .metadata-tab, a")) return;
+
+            isDragging = true;
+            handle.classList.add("is-dragging");
+            const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+            const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+            startX = clientX;
+            startY = clientY;
+
+            const rect = element.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+
+            element.style.position = "fixed";
+            element.style.left = `${initialLeft}px`;
+            element.style.top = `${initialTop}px`;
+            element.style.bottom = "auto";
+            element.style.right = "auto";
+            element.style.margin = "0";
+
+            document.addEventListener("mousemove", onPointerMove);
+            document.addEventListener("mouseup", onPointerUp);
+            document.addEventListener("touchmove", onPointerMove, { passive: false });
+            document.addEventListener("touchend", onPointerUp);
+        };
+
+        const onPointerMove = (e: MouseEvent | TouchEvent) => {
+            if (!isDragging) return;
+            if ("touches" in e) e.preventDefault();
+
+            const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+            const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+            const deltaX = clientX - startX;
+            const deltaY = clientY - startY;
+
+            const maxLeft = Math.max(10, window.innerWidth - element.offsetWidth - 10);
+            const maxTop = Math.max(10, window.innerHeight - element.offsetHeight - 10);
+
+            const newLeft = Math.min(Math.max(10, initialLeft + deltaX), maxLeft);
+            const newTop = Math.min(Math.max(10, initialTop + deltaY), maxTop);
+
+            element.style.left = `${newLeft}px`;
+            element.style.top = `${newTop}px`;
+        };
+
+        const onPointerUp = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            handle.classList.remove("is-dragging");
+            document.removeEventListener("mousemove", onPointerMove);
+            document.removeEventListener("mouseup", onPointerUp);
+            document.removeEventListener("touchmove", onPointerMove);
+            document.removeEventListener("touchend", onPointerUp);
+        };
+
+        handle.addEventListener("mousedown", onPointerDown);
+        handle.addEventListener("touchstart", onPointerDown, { passive: true });
     }
 
     private createMetadataForm(section: SectionId): void {
-        const form = document.getElementById(`metaForm${section}`) as HTMLDivElement | null
-        this.metaData[section] = form
+        const form = document.getElementById(`metaForm${section}`) as HTMLDivElement | null;
+        this.metaData[section] = form;
         if (!form) throw new Error("Metadata form not found");
         form.replaceChildren();
-        if (!this.metaVisible[section] && this.metaVisible[section] == null) {
-            throw Error("Visibility not found")
-        }
-        this.setMetadataVisibility(form, Boolean(this.metaVisible[section]))
 
-        const metaDataTabs = this.createMetadaTabs(section)
-        const metaDataBody = this.createMetadaBody(section, form)
-        const metaDataEdit = this.createMetadaEdit(section)
-        form.append(metaDataTabs, metaDataBody, metaDataEdit);
+        if (!this.metaVisible[section] && this.metaVisible[section] == null) {
+            throw Error("Visibility not found");
+        }
+        this.setMetadataVisibility(form, Boolean(this.metaVisible[section]));
+
+        const dragHandle = document.createElement("div");
+        dragHandle.className = "metadata-drag-handle";
+        dragHandle.title = "Drag window to move";
+        dragHandle.innerHTML = `<span class="drag-indicator"></span>`;
+        this.makeDraggable(form, dragHandle);
+
+        const metaDataTabs = this.createMetadaTabs(section);
+        const metaDataBody = this.createMetadaBody(section, form);
+        const metaDataEdit = this.createMetadaEdit(section);
+        form.append(dragHandle, metaDataTabs, metaDataBody, metaDataEdit);
 
         const uploadFormWrapper = document.createElement("div");
         uploadFormWrapper.className = "upload-form hidden";
-        uploadFormWrapper.style.minWidth = "14rem";
+        uploadFormWrapper.style.minWidth = "16rem";
+
+        const uploadDragHandle = document.createElement("div");
+        uploadDragHandle.className = "metadata-drag-handle";
+        uploadDragHandle.title = "Drag upload window";
+        uploadDragHandle.innerHTML = `<span class="drag-indicator"></span>`;
+        this.makeDraggable(uploadFormWrapper, uploadDragHandle);
 
         const closeUploadBtn = document.createElement("button");
         closeUploadBtn.type = "button";
@@ -112,7 +196,7 @@ export default class Metadata {
             }
         });
 
-        uploadFormWrapper.append(closeUploadBtn, fileInput, uploadTitleInput, uploadTagSelect, submitUploadBtn);
+        uploadFormWrapper.append(uploadDragHandle, closeUploadBtn, fileInput, uploadTitleInput, uploadTagSelect, submitUploadBtn);
         this.uploadFormWrapper = uploadFormWrapper;
         if (section === 1) { this.html.appRoot.appendChild(this.uploadFormWrapper); }
     }
@@ -139,27 +223,42 @@ export default class Metadata {
         const tabFavorite = createTab("favorite");
         tabsContainer.append(tabRandom, tabNew, tabFavorite);
         this.metaDataTabs[section] = tabsContainer;
-        return tabsContainer
+        return tabsContainer;
     }
 
     createMetadaInput(section: SectionId) {
-        const makeInput = (placeholder: string, key: keyof VideoWithRelations) => {
+        const makeInput = (label: string, placeholder: string, key: keyof VideoWithRelations, readonly = false) => {
+            const row = document.createElement("div");
+            row.className = "metadata-field-row";
+
+            const labelEl = document.createElement("label");
+            labelEl.className = "metadata-field-label";
+            labelEl.textContent = label;
+
             const input = document.createElement("input");
             input.type = "text";
+            input.name = key;
+            input.dataset.key = key;
             input.placeholder = placeholder;
-            input.className = "input-fields";
+            input.className = "input-fields metadata-edit-input";
+            if (readonly) {
+                input.readOnly = true;
+                input.classList.add("input-readonly");
+            }
             this.metaDataInputs[section]?.push(input);
-            return input;
+
+            row.append(labelEl, input);
+            return row;
         };
 
-        const titleInput = makeInput("Title", "title");
-        const modelInput = makeInput("Models", "models");
-        const studioInput = makeInput("Studio", "studio");
-        const idInput = makeInput("id", "id");
+        const titleRow = makeInput("Title", "Video title", "title");
+        const modelRow = makeInput("Models", "Models (comma-separated)", "models");
+        const studioRow = makeInput("Studio", "Studio name", "studio");
+        const idRow = makeInput("Video ID", "id", "id", true);
 
         const fieldsWrapper = this.html.createDiv(`metadata-fields-${section}`, "metadata-fields");
-        fieldsWrapper.append(titleInput, modelInput, studioInput, idInput);
-        return fieldsWrapper
+        fieldsWrapper.append(titleRow, modelRow, studioRow, idRow);
+        return fieldsWrapper;
     }
 
     async populateUploadTagSelect() {
@@ -178,10 +277,10 @@ export default class Metadata {
     createMetadaEdit(section: SectionId) {
         const editorPanel = this.html.createDiv(`metadata-editor-${section}`, "metadata-editor hidden");
         const editorActions = this.html.createDiv(`metadata-actions-${section}`, "metadata-actions");
-        const metaDataInput = this.createMetadaInput(section)
+        const metaDataInput = this.createMetadaInput(section);
         editorPanel.append(editorActions, metaDataInput);
-        this.metaDataEdit[section] = editorPanel
-        return editorPanel
+        this.metaDataEdit[section] = editorPanel;
+        return editorPanel;
     }
 
     createMetadaBody(section: SectionId, form: HTMLElement) {
@@ -208,7 +307,7 @@ export default class Metadata {
             });
             document.querySelectorAll<HTMLElement>(".add-tag-pill").forEach((el) => el.classList.toggle("hidden", !nextAdvancedMode));
             editToggleBtn.innerHTML = nextAdvancedMode
-                ? `${this.doneIcon}<span>Minimize</span>`
+                ? `${this.doneIcon}<span>Done</span>`
                 : `${this.editIcon}<span>Edit</span>`;
             editToggleBtn.title = nextAdvancedMode ? "Return to view mode" : "Edit metadata";
         };
@@ -225,14 +324,14 @@ export default class Metadata {
             const addClipBtn = document.createElement("button");
             addClipBtn.type = "button";
             addClipBtn.className = "clip-action-btn add-clip-btn";
-            addClipBtn.innerHTML = `<span>Add</span>`;
-            addClipBtn.title = "Add clip";
+            addClipBtn.innerHTML = `<span>Approve</span>`;
+            addClipBtn.title = "Approve clip";
 
             const removeClipBtn = document.createElement("button");
             removeClipBtn.type = "button";
             removeClipBtn.className = "clip-action-btn remove-clip-btn";
-            removeClipBtn.innerHTML = `<span>Remove</span>`;
-            removeClipBtn.title = "Remove clip";
+            removeClipBtn.innerHTML = `<span>Delete</span>`;
+            removeClipBtn.title = "Delete clip";
 
             clipActions.append(addClipBtn, removeClipBtn);
             metadataHeader.append(editToggleBtn, closeMetadataBtn, clipActions);
@@ -240,10 +339,10 @@ export default class Metadata {
         } else {
             editToggleBtn.classList.remove("hidden");
             const videoTagsLabel = document.createElement("div");
-            videoTagsLabel.textContent = "Video tags";
+            videoTagsLabel.textContent = "Tags";
             videoTagsLabel.className = "tag-section-label";
             const metadataHint = document.createElement("div");
-            metadataHint.textContent = "Tap tags to filter instantly";
+            metadataHint.textContent = "Tap tags to filter video stream";
             metadataHint.className = "metadata-subtitle";
             metadataTitleGroup.append(videoTagsLabel, metadataHint);
 
@@ -261,7 +360,7 @@ export default class Metadata {
 
             closeMetadataBtn.addEventListener("click", () => {
                 this.state.advancedMode = false;
-                this.metaVisible[section] = false
+                this.metaVisible[section] = false;
                 this.setMetadataVisibility(form, false);
             });
             showMetadataBtn.addEventListener("click", () => {
@@ -273,12 +372,12 @@ export default class Metadata {
             videoTagsContainer.append(metadataHeader, videoTagsWrapper);
         }
         this.html.videoTagsContainers[section] = videoTagsWrapper;
-        return videoTagsContainer
+        return videoTagsContainer;
     }
 
     createMetadaEditTags(section: SectionId) {
         const tagButtonWrapper = this.html.createDiv(`tag-button-wrapper-${section}`, "relative inline-block");
-        return tagButtonWrapper
+        return tagButtonWrapper;
     }
 
     setMetadataVisibility(form: HTMLElement, visibility: boolean) {

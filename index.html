@@ -123,18 +123,205 @@
         }
 
         .metadata-form {
-            z-index: 3;
+            z-index: 50;
             position: absolute;
             left: 14px;
             bottom: max(112px, env(safe-area-inset-bottom, 0px) + 96px);
-            width: min(76vw, 300px);
-            backdrop-filter: blur(3px);
-            -webkit-backdrop-filter: blur(3px);
-            background: rgba(10, 13, 18, 0.16);
-            border-radius: 16px;
-            border: 0.5px solid rgba(255, 255, 255, 0.12);
-            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
-            padding: 10px;
+            width: min(86vw, 340px);
+            max-height: calc(100vh - 160px);
+            overflow-y: auto;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            background: rgba(10, 14, 22, 0.82);
+            border-radius: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+            padding: 12px 14px;
+            color: #f5f7fb;
+        }
+
+        .metadata-drag-handle {
+            width: 100%;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            padding: 2px 0 6px 0;
+            margin-bottom: 4px;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        .metadata-drag-handle:active,
+        .metadata-drag-handle.is-dragging {
+            cursor: grabbing;
+        }
+
+        .drag-indicator {
+            width: 38px;
+            height: 4px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.28);
+            transition: background 0.2s ease, width 0.2s ease;
+        }
+
+        .metadata-drag-handle:hover .drag-indicator {
+            background: rgba(143, 211, 255, 0.7);
+            width: 48px;
+        }
+
+        .google-auth-pill {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 16px;
+            background: rgba(12, 16, 24, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 999px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: #f5f7fb;
+            font-size: 0.84rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .google-auth-pill:hover {
+            background: rgba(22, 28, 42, 0.95);
+            border-color: rgba(143, 211, 255, 0.45);
+            transform: translateY(-1px);
+        }
+
+        .google-user-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px 4px 4px;
+            background: rgba(12, 16, 24, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 999px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: #f5f7fb;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .user-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .user-name {
+            max-width: 90px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .logout-indicator {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 1.15rem;
+            line-height: 1;
+            margin-left: 2px;
+        }
+
+        .volume-control-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 2px 8px 2px 2px;
+            border: 0.5px solid rgba(255, 255, 255, 0.14);
+        }
+
+        .volume-slider-wrapper {
+            display: flex;
+            align-items: center;
+            width: 64px;
+        }
+
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 999px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #8fd3ff;
+            cursor: pointer;
+        }
+
+        #muteBtn.is-muted .icon-sound { display: none !important; }
+        #muteBtn.is-muted .icon-muted { display: block !important; }
+        #muteBtn:not(.is-muted) .icon-sound { display: block !important; }
+        #muteBtn:not(.is-muted) .icon-muted { display: none !important; }
+
+        #fullScreenBtn.is-fullscreen .icon-enter { display: none !important; }
+        #fullScreenBtn.is-fullscreen .icon-exit { display: block !important; }
+        #fullScreenBtn:not(.is-fullscreen) .icon-enter { display: block !important; }
+        #fullScreenBtn:not(.is-fullscreen) .icon-exit { display: none !important; }
+
+        #multiScreenBtn.is-active .icon-grid { display: none !important; }
+        #multiScreenBtn.is-active .icon-single { display: block !important; }
+        #multiScreenBtn:not(.is-active) .icon-grid { display: block !important; }
+        #multiScreenBtn:not(.is-active) .icon-single { display: none !important; }
+
+        .tag-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: rgba(14, 18, 26, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: rgba(245, 247, 251, 0.9);
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: all 0.2s ease;
+            user-select: none;
+            margin: 2px;
+        }
+
+        .tag-check-icon {
+            display: none;
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: #6ee7b7;
+        }
+
+        .tag-button.active-tag {
+            background: rgba(16, 185, 129, 0.22) !important;
+            border-color: #34d399 !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 14px rgba(52, 211, 153, 0.35) !important;
+        }
+
+        .tag-button.active-tag .tag-check-icon {
+            display: inline-block;
         }
 
         .metadata-header {
@@ -447,21 +634,26 @@
                         </svg>
                     </span>
                 </button>
-                <button class="control-btn-square is-muted" id="muteBtn" title="Mute/Unmute All Videos">
-                    <span class="icon-sound">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
-                            <path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </span>
-                    <span class="icon-muted hidden">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
-                            <line x1="23" y1="9" x2="17" y2="15" stroke-linecap="round" stroke-linejoin="round" />
-                            <line x1="17" y1="9" x2="23" y2="15" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </span>
-                </button>
+                <div class="volume-control-group" id="volumeControlGroup">
+                    <button class="control-btn-square is-muted" id="muteBtn" title="Mute/Unmute All Videos">
+                        <span class="icon-sound">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
+                                <path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </span>
+                        <span class="icon-muted hidden">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M11 5L6 9H2v6h4l5 4V5z" stroke-linecap="round" stroke-linejoin="round" />
+                                <line x1="23" y1="9" x2="17" y2="15" stroke-linecap="round" stroke-linejoin="round" />
+                                <line x1="17" y1="9" x2="23" y2="15" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </span>
+                    </button>
+                    <div class="volume-slider-wrapper" id="volumeSliderWrapper">
+                        <input type="range" id="volumeSlider" min="0" max="100" value="50" class="volume-slider" title="Volume Slider" />
+                    </div>
+                </div>
                 <button class="control-btn-square" id="reloadBtn" title="Reload Player">
                     <span class="icon-reload">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">

@@ -32,13 +32,16 @@ app.use(
       "http://localhost:80",
       "https://clip-flip.com",
       "https://www.clip-flip.com",
+      "http://56.228.95.201",
+      "http://56.228.95.201:80",
     ],
     credentials: true,
   })
 );
 app.use(express.json());
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "1005873499572-tfcfkhv3bhl9o8mbddvpnvsdi7ua5ele.apps.googleusercontent.com";
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Directories
 const tempBaseDir = path.resolve(__dirname, "../storage/temp/videos");
@@ -1076,7 +1079,7 @@ app.post("/auth/google", async (req: Request, res: Response) => {
 
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: GOOGLE_CLIENT_ID,
     });
 
     const payload = ticket.getPayload();

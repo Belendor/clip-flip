@@ -13,6 +13,7 @@ class Players {
 
     private loadRevision = 0;
     private muted = true;
+    private volume = 0.5;
     private searchAbortController: AbortController | null = null;
 
     constructor(
@@ -21,6 +22,12 @@ class Players {
         private readonly api: VideoApi,
         private readonly user: User,
     ) {
+        try {
+            const savedVol = localStorage.getItem("clipflip_volume");
+            if (savedVol !== null) this.volume = Math.max(0, Math.min(1, parseFloat(savedVol)));
+            const savedMuted = localStorage.getItem("clipflip_muted");
+            if (savedMuted !== null) this.muted = savedMuted === "true";
+        } catch (_) {}
         this.state.onEmptyPlays = () => this.showNoVideosBox();
         this.user.init();
     }
@@ -116,6 +123,7 @@ class Players {
         player.poster = this.buildPosterUrl(videoId);
         player.preload = preload;
         player.muted = this.muted;
+        player.volume = this.volume;
         player.playsInline = true;
         player.src = this.buildVideoUrl(videoId);
         player.setAttribute("data-video-id", String(videoId));
@@ -232,9 +240,9 @@ class Players {
                 input.addEventListener("input", async (event) => {
                     event.preventDefault();
                     const target = event.target as HTMLInputElement | HTMLSelectElement;
-                    const key = target.name || target.id || target.dataset.key;
+                    const key = target.name || target.dataset.key || target.id;
                     const value = target.value;
-                    if (key) await this.updateMeta(section, key, value);
+                    if (key && key !== "id") await this.updateMeta(section, key, value);
                 });
             });
         });
@@ -299,11 +307,27 @@ class Players {
             this.html.fullscreenButton.classList.toggle("is-fullscreen", !!document.fullscreenElement);
         });
 
+        const volumeSlider = document.getElementById("volumeSlider") as HTMLInputElement | null;
+        if (volumeSlider) {
+            volumeSlider.value = String(Math.round(this.volume * 100));
+            volumeSlider.addEventListener("input", (e) => {
+                e.stopPropagation();
+                const val = Number(volumeSlider.value);
+                this.volume = val / 100;
+                this.muted = val === 0;
+                this.syncAudioState();
+            });
+        }
+
         this.html.muteToggle.addEventListener("click", () => {
-            this.html.muteToggle.classList.toggle("is-muted");
             this.muted = !this.muted;
-            this.html.videoPlayers.forEach((player) => { player.muted = this.muted; player.volume = 0.1; });
+            if (!this.muted && this.volume === 0) {
+                this.volume = 0.4;
+                if (volumeSlider) volumeSlider.value = "40";
+            }
+            this.syncAudioState();
         });
+        this.syncAudioState();
 
         this.html.reloadToggle.addEventListener("click", () => { window.location.replace("/"); });
 
@@ -322,6 +346,7 @@ class Players {
 
         this.html.multiscreenButton.addEventListener("click", () => {
             this.state.multiSection = !this.state.multiSection;
+            this.html.multiscreenButton.classList.toggle("is-active", this.state.multiSection);
             if (this.state.multiSection) {
                 this.state.sectionIds = [1, 2, 3, 4];
                 Array.from(document.getElementsByClassName("player")).forEach((player) => {
@@ -352,6 +377,22 @@ class Players {
         await document.exitFullscreen();
     }
 
+    private syncAudioState() {
+        this.html.muteToggle.classList.toggle("is-muted", this.muted);
+        this.html.videoPlayers.forEach((player) => {
+            player.muted = this.muted;
+            player.volume = this.volume;
+        });
+        const volumeSlider = document.getElementById("volumeSlider") as HTMLInputElement | null;
+        if (volumeSlider && !this.muted) {
+            volumeSlider.value = String(Math.round(this.volume * 100));
+        }
+        try {
+            localStorage.setItem("clipflip_volume", String(this.volume));
+            localStorage.setItem("clipflip_muted", String(this.muted));
+        } catch (_) {}
+    }
+
     private attachSearchListeners() {
         const searchInput = document.getElementById("search-input") as HTMLInputElement | null;
         const advancedPanel = document.getElementById("advancedPanel") as HTMLElement | null;
@@ -361,12 +402,20 @@ class Players {
             advancedPanel.classList.remove("hidden");
             this.renderTagResults(this.state.tags, advancedPanel, searchInput);
         });
-        searchInput.addEventListener("focusout", () => {
-            window.setTimeout(() => { advancedPanel.classList.add("hidden"); }, 200);
+
+        document.addEventListener("click", (e) => {
+            const target = e.target as HTMLElement;
+            if (!advancedPanel.contains(target) && target !== searchInput) {
+                advancedPanel.classList.add("hidden");
+            }
         });
+
         searchInput.addEventListener("input", async (event) => {
             const value = (event.target as HTMLInputElement).value.trim();
-            if (!value) { advancedPanel.innerHTML = ""; return; }
+            if (!value) {
+                this.renderTagResults(this.state.tags, advancedPanel, searchInput);
+                return;
+            }
             this.searchAbortController?.abort();
             this.searchAbortController = new AbortController();
             try {
@@ -388,10 +437,20 @@ class Players {
 
     private renderTagResults(tags: Tag[], advancedPanel: HTMLElement, searchInput: HTMLInputElement) {
         advancedPanel.innerHTML = "";
+        if (!tags || tags.length === 0) {
+            const emptyNotice = document.createElement("div");
+            emptyNotice.className = "col-span-3 text-center py-4 text-sm text-gray-400";
+            emptyNotice.textContent = "No matching tags found";
+            advancedPanel.appendChild(emptyNotice);
+            return;
+        }
+
         tags.forEach((tag) => {
             const card = document.createElement("div");
             card.className = "tag-card";
-            if (this.state.activeTags.get(1)?.includes(tag.title)) card.classList.add("active-tag");
+            card.dataset.tag = tag.title;
+            const isActive = this.state.activeTags.get(1)?.includes(tag.title) ?? false;
+            if (isActive) card.classList.add("active-tag");
 
             const defaultImg = `${config.thumbnailSourcePath}thumbnail.jpg`;
             const imgPath = `${config.thumbnailSourcePath}${encodeURIComponent(tag.title)}.jpg`;
@@ -405,9 +464,14 @@ class Players {
             title.textContent = tag.title + (tag.videoCount ? ` (${tag.videoCount})` : "");
             card.appendChild(title);
 
-            card.addEventListener("click", async () => {
+            const activeBadge = document.createElement("div");
+            activeBadge.className = "tag-card-active-badge";
+            activeBadge.textContent = "✓ Active";
+            card.appendChild(activeBadge);
+
+            card.addEventListener("click", async (e) => {
+                e.stopPropagation();
                 await this.toggleTag(tag.title, true);
-                searchInput.value = "";
             });
             advancedPanel.appendChild(card);
         });
@@ -552,11 +616,15 @@ class Players {
         }
 
         form.querySelectorAll<HTMLInputElement>("input").forEach((input) => {
-            switch (input.placeholder) {
+            const key = input.dataset.key || input.name || input.placeholder;
+            switch (key) {
                 case "id": input.value = String(video.id); break;
-                case "Title": input.value = video.title ?? ""; break;
-                case "Models": input.value = safeModels.map((model) => model.name ?? "").filter(Boolean).join(", "); break;
-                case "Studio": input.value = video.studio ?? ""; break;
+                case "Title":
+                case "title": input.value = video.title ?? ""; break;
+                case "Models":
+                case "models": input.value = safeModels.map((model) => model.name ?? "").filter(Boolean).join(", "); break;
+                case "Studio":
+                case "studio": input.value = video.studio ?? ""; break;
             }
         });
 
@@ -678,17 +746,24 @@ class Players {
     }
 
     async toggleTag(tag: string, reset = true): Promise<void> {
-        document.querySelectorAll<HTMLButtonElement>(".tag-button").forEach((button) => {
-            button.classList.remove("active-tag");
-        });
-
         this.state.activeTags.forEach((currentTags, sectionId) => {
             const index = currentTags.indexOf(tag);
             if (index >= 0) currentTags.splice(index, 1);
             else currentTags.push(tag);
+        });
 
-            document.querySelectorAll<HTMLButtonElement>(`.${tag}-id-${sectionId}`)
-                .forEach((button) => button.classList.add("active-tag"));
+        document.querySelectorAll<HTMLButtonElement>(".tag-button").forEach((btn) => {
+            const btnTag = btn.dataset.tag;
+            const btnSection = (Number(btn.dataset.section) || 1) as SectionId;
+            const isActive = !!btnTag && (this.state.activeTags.get(btnSection)?.includes(btnTag) ?? false);
+            btn.classList.toggle("active-tag", isActive);
+            btn.setAttribute("aria-pressed", String(isActive));
+        });
+
+        document.querySelectorAll<HTMLElement>(".tag-card").forEach((card) => {
+            const cardTag = card.dataset.tag;
+            const isActive = !!cardTag && (this.state.activeTags.get(1)?.includes(cardTag) ?? false);
+            card.classList.toggle("active-tag", isActive);
         });
 
         if (!reset) return;
