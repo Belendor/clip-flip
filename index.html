@@ -622,13 +622,13 @@
         #muteBtn:not(.is-muted) .icon-muted { display: none !important; }
 
         #fullScreenBtn.is-fullscreen .icon-enter { display: none !important; }
-        #fullScreenBtn.is-fullscreen .icon-exit { display: block !important; }
-        #fullScreenBtn:not(.is-fullscreen) .icon-enter { display: block !important; }
+        #fullScreenBtn.is-fullscreen .icon-exit { display: inline-flex !important; }
+        #fullScreenBtn:not(.is-fullscreen) .icon-enter { display: inline-flex !important; }
         #fullScreenBtn:not(.is-fullscreen) .icon-exit { display: none !important; }
 
         #multiScreenBtn.is-active .icon-grid { display: none !important; }
-        #multiScreenBtn.is-active .icon-single { display: block !important; }
-        #multiScreenBtn:not(.is-active) .icon-grid { display: block !important; }
+        #multiScreenBtn.is-active .icon-single { display: inline-flex !important; }
+        #multiScreenBtn:not(.is-active) .icon-grid { display: inline-flex !important; }
         #multiScreenBtn:not(.is-active) .icon-single { display: none !important; }
 
         .upload-form {
@@ -861,7 +861,7 @@
                             <path d="M15 3h6v6M9 21H3v-6M21 15v6h-6M3 9V3h6" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                     </span>
-                    <span class="icon-exit hidden">
+                    <span class="icon-exit">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
@@ -876,7 +876,7 @@
                             <rect x="14" y="14" width="7" height="7" />
                         </svg>
                     </span>
-                    <span class="icon-single hidden" id="icon-single">
+                    <span class="icon-single" id="icon-single">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <rect x="3" y="3" width="18" height="18" rx="1" />
                         </svg>
