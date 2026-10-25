@@ -40,6 +40,7 @@ if [ -f "nginx/clipflip.conf" ]; then
     sudo systemctl reload nginx
 fi
 
+sudo fuser -k 3000/tcp || true
 sudo systemctl restart clipflip-api
 
 echo "✅ Deployment complete! App is live at http://56.228.95.201"
