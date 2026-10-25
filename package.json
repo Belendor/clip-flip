@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently --kill-others \"npm run build:dev\" \"npm run watch:css\" \"npm run start:dev\"",
     "dev:all": "concurrently --kill-others \"npm run server\" \"npm run build:dev\" \"npm run watch:css\" \"npm run start:dev\"",
-    "server": "ts-node server/index.ts",
+    "server": "tsx server/index.ts",
     "test": "tsx --test tests/Config.test.ts tests/State.test.ts tests/VideoApi.test.ts",
     "build:dev": "webpack --watch --mode development",
     "build:prod": "webpack --mode production",
