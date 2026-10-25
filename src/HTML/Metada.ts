@@ -51,6 +51,7 @@ export default class Metadata {
             if (!sectionElement) throw new Error(`Section element for section ${section} not found`);
             this.createMetadataForm(section);
         });
+        this.html.updateMetadataButton(true);
     }
 
     private makeDraggable(element: HTMLElement, handle: HTMLElement) {
@@ -154,7 +155,7 @@ export default class Metadata {
             this.state.advancedMode = false;
             this.metaVisible[section] = false;
             this.setMetadataVisibility(form, false);
-            this.html.hideFormsBtn?.classList.remove("is-active");
+            this.html.updateMetadataButton(false);
         });
 
         topBar.append(metaDataTabs, closeMetadataBtn);

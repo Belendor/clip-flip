@@ -119,7 +119,14 @@ export default class HTML {
             }
         });
 
-        this.hideFormsBtn?.classList.toggle("is-active", targetState);
+        this.updateMetadataButton(targetState);
+    }
+
+    updateMetadataButton(isOpen: boolean) {
+        if (!this.hideFormsBtn) return;
+        this.hideFormsBtn.classList.remove("is-active");
+        this.hideFormsBtn.classList.toggle("is-closed", !isOpen);
+        this.hideFormsBtn.title = isOpen ? "Hide Metadata Window" : "Show Metadata Window";
     }
 
     createDiv(id: string, className = ""): HTMLDivElement {

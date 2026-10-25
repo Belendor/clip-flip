@@ -1118,6 +1118,50 @@ body {
     box-shadow: 0 8px 20px rgba(87, 166, 255, 0.16);
 }
 
+/* Metadata Toggle Button (Hide / Show) */
+#hideForms .icon-metadata-open {
+    display: inline-flex !important;
+}
+
+#hideForms .icon-metadata-closed {
+    display: none !important;
+}
+
+#hideForms.is-closed .icon-metadata-open {
+    display: none !important;
+}
+
+#hideForms.is-closed .icon-metadata-closed {
+    display: inline-flex !important;
+}
+
+/* When closed, metadata button burns vibrant green as the most important button to know */
+#hideForms.is-closed {
+    background: rgba(16, 185, 129, 0.28) !important;
+    border-color: #34d399 !important;
+    color: #ffffff !important;
+    animation: burning-green 2s infinite ease-in-out;
+}
+
+#hideForms.is-closed:hover {
+    background: rgba(16, 185, 129, 0.45) !important;
+    border-color: #6ee7b7 !important;
+    box-shadow: 0 0 24px rgba(52, 211, 153, 0.95), 0 0 40px rgba(16, 185, 129, 0.7) !important;
+}
+
+@keyframes burning-green {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(52, 211, 153, 0.65), 0 0 22px rgba(16, 185, 129, 0.45);
+        border-color: #34d399;
+        transform: translateY(0);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(52, 211, 153, 0.95), 0 0 38px rgba(16, 185, 129, 0.7);
+        border-color: #6ee7b7;
+        transform: translateY(-1px) scale(1.05);
+    }
+}
+
 .control-btn-square.is-muted {
     opacity: 0.62;
     border-color: rgba(255, 255, 255, 0.22);
