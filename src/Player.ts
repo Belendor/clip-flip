@@ -96,6 +96,7 @@ class Players {
         this.configurePlayer(frontPlayer, currentVideoId, "auto");
         if (revision !== this.loadRevision) return false;
 
+        await this.waitForVideoReady(frontPlayer);
         await this.playPlayer(frontPlayer, frontIndex);
         if (revision !== this.loadRevision) return false;
 
@@ -122,8 +123,10 @@ class Players {
         player.poster = this.buildPosterUrl(videoId);
         player.preload = preload;
         player.muted = this.muted;
+        player.defaultMuted = true;
         player.volume = this.volume;
         player.playsInline = true;
+        player.autoplay = true;
         player.src = this.buildVideoUrl(videoId);
         player.setAttribute("data-video-id", String(videoId));
         player.load();
@@ -156,12 +159,23 @@ class Players {
 
     private async playPlayer(player: HTMLVideoElement, index: PlayerIndex) {
         try {
+            player.muted = this.muted;
             await player.play();
             this.state.playing[index] = true;
             this.updatePlayPauseIcon(true);
         } catch (error) {
-            this.state.playing[index] = false;
-            console.error("Failed to play video", error);
+            console.warn("Autoplay was blocked or interrupted, retrying with muted:", error);
+            try {
+                player.muted = true;
+                this.muted = true;
+                this.syncAudioState();
+                await player.play();
+                this.state.playing[index] = true;
+                this.updatePlayPauseIcon(true);
+            } catch (fallbackError) {
+                this.state.playing[index] = false;
+                console.error("Autoplay retry also failed:", fallbackError);
+            }
         }
     }
 
@@ -307,12 +321,14 @@ class Players {
         });
 
         const volumeTrackBar = document.getElementById("volumeTrackBar");
+        const trackContainer = document.getElementById("volumeTrackContainer");
         const volumeWrapper = document.getElementById("volumeSliderWrapper");
         let isDraggingVolume = false;
 
         const updateVolumeFromPointer = (clientY: number) => {
-            if (!volumeTrackBar) return;
-            const rect = volumeTrackBar.getBoundingClientRect();
+            const targetEl = volumeTrackBar || trackContainer;
+            if (!targetEl) return;
+            const rect = targetEl.getBoundingClientRect();
             const rawPercent = ((rect.bottom - clientY) / rect.height) * 100;
             const clamped = Math.max(0, Math.min(100, Math.round(rawPercent)));
             this.volume = clamped / 100;
@@ -320,32 +336,37 @@ class Players {
             this.syncAudioState();
         };
 
-        volumeTrackBar?.addEventListener("pointerdown", (e) => {
+        const handlePointerDown = (e: PointerEvent) => {
             e.stopPropagation();
             e.preventDefault();
             isDraggingVolume = true;
-            try { volumeTrackBar.setPointerCapture(e.pointerId); } catch (_) {}
+            try { (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId); } catch (_) {}
             volumeWrapper?.classList.add("is-active");
             updateVolumeFromPointer(e.clientY);
-        });
+        };
 
-        volumeTrackBar?.addEventListener("pointermove", (e) => {
+        const handlePointerMove = (e: PointerEvent) => {
             if (!isDraggingVolume) return;
             e.stopPropagation();
             e.preventDefault();
             updateVolumeFromPointer(e.clientY);
-        });
+        };
 
-        const stopVolumeDrag = (e: PointerEvent) => {
+        const handlePointerUp = (e: PointerEvent) => {
             if (isDraggingVolume) {
                 isDraggingVolume = false;
-                try { volumeTrackBar?.releasePointerCapture(e.pointerId); } catch (_) {}
+                try { (e.currentTarget as HTMLElement)?.releasePointerCapture(e.pointerId); } catch (_) {}
                 volumeWrapper?.classList.remove("is-active");
             }
         };
 
-        volumeTrackBar?.addEventListener("pointerup", stopVolumeDrag);
-        volumeTrackBar?.addEventListener("pointercancel", stopVolumeDrag);
+        [trackContainer, volumeTrackBar].forEach((el) => {
+            if (!el) return;
+            el.addEventListener("pointerdown", handlePointerDown);
+            el.addEventListener("pointermove", handlePointerMove);
+            el.addEventListener("pointerup", handlePointerUp);
+            el.addEventListener("pointercancel", handlePointerUp);
+        });
 
         this.html.muteToggle.addEventListener("click", (e) => {
             e.stopPropagation();
