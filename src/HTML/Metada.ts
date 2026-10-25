@@ -140,10 +140,27 @@ export default class Metadata {
         dragHandle.innerHTML = `<span class="drag-indicator"></span>`;
         this.makeDraggable(form, dragHandle);
 
+        const topBar = document.createElement("div");
+        topBar.className = "metadata-top-bar";
+
         const metaDataTabs = this.createMetadaTabs(section);
+
+        const closeMetadataBtn = document.createElement("button");
+        closeMetadataBtn.type = "button";
+        closeMetadataBtn.className = "metadata-close-btn";
+        closeMetadataBtn.innerHTML = "&times;";
+        closeMetadataBtn.title = "Hide metadata";
+        closeMetadataBtn.addEventListener("click", () => {
+            this.state.advancedMode = false;
+            this.metaVisible[section] = false;
+            this.setMetadataVisibility(form, false);
+        });
+
+        topBar.append(metaDataTabs, closeMetadataBtn);
+
         const metaDataBody = this.createMetadaBody(section, form);
         const metaDataEdit = this.createMetadaEdit(section);
-        form.append(dragHandle, metaDataTabs, metaDataBody, metaDataEdit);
+        form.append(dragHandle, topBar, metaDataBody, metaDataEdit);
 
         const uploadFormWrapper = document.createElement("div");
         uploadFormWrapper.className = "upload-form hidden";
@@ -284,19 +301,11 @@ export default class Metadata {
     }
 
     createMetadaBody(section: SectionId, form: HTMLElement) {
-        const metadataTitleGroup = this.html.createDiv(`metadata-title-group-${section}`, "metadata-title-group");
-        const metadataHeader = this.html.createDiv(`metadata-header-${section}`, "metadata-header");
         const editToggleBtn = document.createElement("button");
         editToggleBtn.type = "button";
         editToggleBtn.className = `edit-toggle metadata-edit-btn ${this.state.multiSection ? "hidden" : ""}`;
         editToggleBtn.innerHTML = `${this.editIcon}<span>Edit</span>`;
         editToggleBtn.title = "Edit metadata";
-
-        const closeMetadataBtn = document.createElement("button");
-        closeMetadataBtn.type = "button";
-        closeMetadataBtn.className = "metadata-close-btn";
-        closeMetadataBtn.innerHTML = "&times;";
-        closeMetadataBtn.title = "Hide metadata";
 
         const toggleEditMode = () => {
             const nextAdvancedMode = !this.state.advancedMode;
@@ -318,9 +327,13 @@ export default class Metadata {
         const videoTagsWrapper = this.html.createDiv(`video-tags-wrapper-${section}`, "tag-container metadata-tag-list");
 
         if (this.state.state === "new") {
+            const middleRow = document.createElement("div");
+            middleRow.className = "metadata-middle-row";
+
             const clipActions = document.createElement("div");
             clipActions.className = "clip-actions";
             editToggleBtn.classList.add("hidden");
+
             const addClipBtn = document.createElement("button");
             addClipBtn.type = "button";
             addClipBtn.className = "clip-action-btn add-clip-btn";
@@ -334,14 +347,24 @@ export default class Metadata {
             removeClipBtn.title = "Delete clip";
 
             clipActions.append(addClipBtn, removeClipBtn);
-            metadataHeader.append(editToggleBtn, closeMetadataBtn, clipActions);
-            videoTagsContainer.append(metadataHeader);
+            middleRow.append(clipActions);
+
+            const divider = document.createElement("div");
+            divider.className = "metadata-divider";
+
+            videoTagsContainer.append(middleRow, divider, videoTagsWrapper);
         } else {
             editToggleBtn.classList.remove("hidden");
-            const videoTagsLabel = document.createElement("div");
+
+            const middleRow = document.createElement("div");
+            middleRow.className = "metadata-middle-row";
+
+            const videoTagsLabel = document.createElement("span");
             videoTagsLabel.textContent = "Tags";
             videoTagsLabel.className = "tag-section-label";
-            metadataTitleGroup.append(videoTagsLabel);
+
+            const actionGroup = document.createElement("div");
+            actionGroup.className = "metadata-action-group";
 
             const favoriteBtn = document.createElement("button");
             favoriteBtn.type = "button";
@@ -349,25 +372,18 @@ export default class Metadata {
             favoriteBtn.innerHTML = `<span class="favorite-heart">♡</span><span class="favorite-count">0</span>`;
             favoriteBtn.title = "Favorite";
 
-            const showMetadataBtn = document.createElement("button");
-            showMetadataBtn.type = "button";
-            showMetadataBtn.className = "metadata-show-btn hidden";
-            showMetadataBtn.textContent = "i";
-            showMetadataBtn.title = "Show metadata";
+            actionGroup.append(favoriteBtn, editToggleBtn);
+            middleRow.append(videoTagsLabel, actionGroup);
 
-            closeMetadataBtn.addEventListener("click", () => {
-                this.state.advancedMode = false;
-                this.metaVisible[section] = false;
-                this.setMetadataVisibility(form, false);
-            });
-            showMetadataBtn.addEventListener("click", () => {
-                form.classList.remove("metadata-hidden");
-                showMetadataBtn.classList.add("hidden");
-            });
+            const divider = document.createElement("div");
+            divider.className = "metadata-divider";
 
-            metadataHeader.append(metadataTitleGroup, showMetadataBtn, editToggleBtn, favoriteBtn, closeMetadataBtn);
-            videoTagsContainer.append(metadataHeader, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider, videoTagsWrapper);
         }
+
+        this.html.videoTagsContainers[section] = videoTagsWrapper;
+        return videoTagsContainer;
+    }
         this.html.videoTagsContainers[section] = videoTagsWrapper;
         return videoTagsContainer;
     }

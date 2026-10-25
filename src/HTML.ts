@@ -161,14 +161,10 @@ export default class HTML {
                 button.classList.add("hidden-tag", "hidden");
             }
 
-            const checkSpan = document.createElement("span");
-            checkSpan.className = "tag-check-icon";
-            checkSpan.innerHTML = "&#10003;";
-
             const textSpan = document.createElement("span");
             textSpan.className = "tag-label";
             textSpan.textContent = tag.title;
-            button.append(checkSpan, textSpan);
+            button.appendChild(textSpan);
 
             button.addEventListener("click", (event) => {
                 event.stopPropagation();
@@ -180,8 +176,6 @@ export default class HTML {
             deleteButton.classList.toggle("hidden", !this.state.advancedMode);
             deleteButton.innerHTML = "&times;";
             deleteButton.title = `Delete tag "${tag.title}"`;
-            deleteButton.addEventListener("mouseenter", () => button.classList.add("is-deleting"));
-            deleteButton.addEventListener("mouseleave", () => button.classList.remove("is-deleting"));
             deleteButton.addEventListener("click", async (event) => {
                 event.preventDefault();
                 event.stopPropagation();

@@ -589,7 +589,7 @@ class Players {
         const metadataHeader = document.getElementById(`metadata-header-${section}`);
 
         if (this.state.state !== "new") {
-            const oldFavoriteBtn = metadataHeader?.querySelector<HTMLButtonElement>(".favorite-btn");
+            const oldFavoriteBtn = form.querySelector<HTMLButtonElement>(".favorite-btn");
             if (oldFavoriteBtn) {
                 const favoriteBtn = oldFavoriteBtn.cloneNode(true) as HTMLButtonElement;
                 oldFavoriteBtn.replaceWith(favoriteBtn);
