@@ -3,11 +3,13 @@ import HTML from "../HTML";
 import State, { SectionId } from "../State";
 import { VideoWithRelations } from "../types";
 import VideoApi from "../VideoApi";
+import User from "../User";
 
 export default class Metadata {
     state: State;
     html: HTML;
     api: VideoApi;
+    user?: User;
     metaDataEdit: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     metaData: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     metaVisible: { [key: number]: boolean | null } = { 1: null, 2: null, 3: null, 4: null };
@@ -31,10 +33,11 @@ export default class Metadata {
             <path d="M12 5v14M5 12h14" stroke-linecap="round"></path>
         </svg>`;
 
-    constructor(html: HTML, state: State, api: VideoApi) {
+    constructor(html: HTML, state: State, api: VideoApi, user?: User) {
         this.html = html;
         this.state = state;
         this.api = api;
+        this.user = user;
         this.init();
     }
 
@@ -233,17 +236,26 @@ export default class Metadata {
         const tabsContainer = document.createElement("div");
         tabsContainer.className = "metadata-tabs";
 
-        const createTab = (text: "random" | "new" | "favorite") => {
+        const createTab = (mode: "random" | "trending" | "favorite" | "new", label: string) => {
             const tab = document.createElement("button");
-            tab.className = `metadata-tab${this.state.state === text ? " active" : ""}`;
-            tab.textContent = text.charAt(0).toUpperCase() + text.slice(1);
+            tab.type = "button";
+            tab.className = `metadata-tab${this.state.state === mode ? " active" : ""}`;
+            tab.dataset.mode = mode;
+            tab.textContent = label;
             return tab;
         };
 
-        const tabRandom = createTab("random");
-        const tabNew = createTab("new");
-        const tabFavorite = createTab("favorite");
-        tabsContainer.append(tabRandom, tabNew, tabFavorite);
+        const tabRandom = createTab("random", "Random");
+        const tabTrending = createTab("trending", "Trending");
+        const tabFavorite = createTab("favorite", "Favorite");
+        tabsContainer.append(tabRandom, tabTrending, tabFavorite);
+
+        // "New" tab is only visible when logged in!
+        if (this.user?.currentUser) {
+            const tabNew = createTab("new", "New");
+            tabsContainer.append(tabNew);
+        }
+
         this.metaDataTabs[section] = tabsContainer;
         return tabsContainer;
     }

@@ -4,7 +4,7 @@ import type { NewVideo, Tag, Video } from "./types";
 
 export type SectionId = 1 | 2 | 3 | 4;
 export type PlayerIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
-type PlayerState = "random" | "favorite" | "new";
+type PlayerState = "random" | "trending" | "favorite" | "new";
 
 type PositionsMap = Record<SectionId, number>;
 
@@ -31,6 +31,7 @@ class State {
     };
     apiUrl = config.apiUrl;
     taggedVideos: Video[] | null = null;
+    trendingVideos: Video[] | null = null;
     newVideos: NewVideo[] | null = null;
     likedVideos: Video[] | null = null;
     taggedVideosPromise: Promise<void> | undefined;
@@ -233,6 +234,25 @@ class State {
             return;
         }
 
+        // Trending (highest rated / most liked)
+        if (this.state === "trending" && this.trendingVideos != null) {
+            if (this.trendingVideos.length === 0) { this.positions[section] = 0; return; }
+            const availableVideos = this.trendingVideos.filter(video => !this.played.has(video.id));
+            if (availableVideos.length === 0) { this.positions[section] = 0; return; }
+            if (this.randomized) {
+                const roll = Math.random() * 100;
+                if (roll < this.percentChance || random) {
+                    const randomVideo = availableVideos[Math.floor(Math.random() * availableVideos.length)];
+                    this.positions[section] = randomVideo.id;
+                    return;
+                }
+            }
+            const videoIds = availableVideos.map(video => video.id);
+            const currentIndex = videoIds.indexOf(this.positions[section]);
+            this.positions[section] = videoIds[currentIndex + 1] ?? videoIds[0];
+            return;
+        }
+
         // Tagged / DB videos
         if (this.taggedVideos != null) {
             if (this.taggedVideos.length === 0) { this.positions[section] = 0; return; }
@@ -312,6 +332,34 @@ class State {
         } catch (error) {
             console.error(`Failed to fetch videos for section ${section} with tags`, tags, error);
             this.taggedVideos = [];
+            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        }
+    }
+
+    async fetchTrendingVideos(): Promise<void> {
+        console.log("Fetching trending (highest rated) videos");
+        this.clearEmptyState();
+        try {
+            const videos = await this.api.fetchVideos("?sort=trending");
+            // Sort by likes descending, then id descending
+            const sorted = [...(videos || [])].sort((a: any, b: any) => {
+                const likesA = a.likes ?? 0;
+                const likesB = b.likes ?? 0;
+                if (likesB !== likesA) return likesB - likesA;
+                return b.id - a.id;
+            });
+            const unwatched = sorted.filter(video => !this.played.has(video.id));
+            this.trendingVideos = unwatched;
+            this.randomized = false;
+            this.positions = {
+                1: unwatched[0]?.id || 0,
+                2: unwatched[0]?.id || 0,
+                3: unwatched[0]?.id || 0,
+                4: unwatched[0]?.id || 0,
+            };
+        } catch (error) {
+            console.error("Failed to fetch trending videos:", error);
+            this.trendingVideos = [];
             this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
         }
     }

@@ -359,6 +359,7 @@ app.get("/seo-tags/:tag", async (req: Request, res: Response) => {
 
 app.get("/videos", async (req: Request, res: Response) => {
   const search = req.query.search?.toString() || "";
+  const sort = req.query.sort?.toString() || "";
   const userId = Number(req.cookies.userId);
 
   const videos = await prisma.video.findMany({
@@ -400,6 +401,10 @@ app.get("/videos", async (req: Request, res: Response) => {
       reactions: undefined,
     };
   });
+
+  if (sort === "trending" || sort === "likes" || sort === "rating") {
+    mappedVideos.sort((a, b) => b.likes - a.likes);
+  }
 
   res.json(mappedVideos);
 });

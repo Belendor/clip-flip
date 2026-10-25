@@ -43,6 +43,14 @@ class Players {
         this.showLoader();
         this.attachEventListeners();
         this.attachMetadataTabListeners();
+        this.user.onAuthChange = async (user) => {
+            if (!user && (this.state.state === "new" || this.state.state === "favorite")) {
+                await this.switchMode("trending");
+                return;
+            }
+            this.html.metadata.init();
+            this.attachMetadataTabListeners();
+        };
         await Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
         await this.loadVideos();
     }
@@ -248,20 +256,13 @@ class Players {
         this.html.metadata?.metaDataTabs &&
             Object.values(this.html.metadata.metaDataTabs).forEach((metaTab) => {
                 if (!metaTab) return;
-                const tabRandom = metaTab.querySelector(".metadata-tab:nth-child(1)") as HTMLButtonElement | null;
-                const tabNew = metaTab.querySelector(".metadata-tab:nth-child(2)") as HTMLButtonElement | null;
-                const tabFavorite = metaTab.querySelector(".metadata-tab:nth-child(3)") as HTMLButtonElement | null;
-
-                metaTab.addEventListener("click", async (e) => {
-                    const targetBtn = (e.target as HTMLElement)?.closest(".metadata-tab");
+                metaTab.onclick = async (e) => {
+                    const targetBtn = (e.target as HTMLElement)?.closest<HTMLButtonElement>(".metadata-tab");
                     if (!targetBtn) return;
-                    if (targetBtn === tabRandom) await this.switchMode("random");
-                    else if (targetBtn === tabFavorite) await this.switchMode("favorite");
-                    else if (targetBtn === tabNew) await this.switchMode("new");
-                    tabRandom?.classList.toggle("active", targetBtn === tabRandom);
-                    tabFavorite?.classList.toggle("active", targetBtn === tabFavorite);
-                    tabNew?.classList.toggle("active", targetBtn === tabNew);
-                });
+                    const mode = targetBtn.dataset.mode as "random" | "trending" | "new" | "favorite";
+                    if (!mode) return;
+                    await this.switchMode(mode);
+                };
             });
 
         this.state.sectionIds.forEach((section) => {
@@ -904,7 +905,7 @@ class Players {
         }
     }
 
-    private async switchMode(mode: "random" | "new" | "favorite") {
+    private async switchMode(mode: "random" | "trending" | "new" | "favorite") {
         if (this.state.state === mode) return;
         this.state.state = mode;
         this.metadataCache.clear();
@@ -917,13 +918,20 @@ class Players {
                 await this.state.modifyPosition(1, true, this.state.randomInRange(1, this.state.endIndex));
                 await this.state.modifyPosition(1);
                 break;
+            case "trending":
+                this.state.randomized = false;
+                await this.state.fetchTrendingVideos();
+                break;
             case "new":
                 this.state.randomized = false;
                 await this.state.fetchNewVideos();
                 break;
             case "favorite":
                 const id = this.user?.getId();
-                if (!id) return;
+                if (!id) {
+                    alert("Please sign in to view your favorites.");
+                    return;
+                }
                 await this.state.fetchLikedVideos(id);
                 this.state.modifyPosition(1, false, 0);
                 break;

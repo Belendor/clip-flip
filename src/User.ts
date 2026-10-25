@@ -15,6 +15,7 @@ export interface AuthUser {
 
 export default class User {
     currentUser: AuthUser | null = null;
+    onAuthChange: ((user: AuthUser | null) => void) | null = null;
     private scriptLoadPromise: Promise<void> | null = null;
 
     constructor() {
@@ -41,7 +42,10 @@ export default class User {
             });
             if (!res.ok) return;
             const data = await res.json();
-            if (data.loggedIn) this.currentUser = data.user;
+            if (data.loggedIn) {
+                this.currentUser = data.user;
+                this.onAuthChange?.(this.currentUser);
+            }
         } catch (error) {
             console.warn("Failed to check auth status:", error);
         }
@@ -145,6 +149,7 @@ export default class User {
 
             this.currentUser = data.user;
             this.renderUser();
+            this.onAuthChange?.(this.currentUser);
         } catch (err) {
             console.error("Auth request error:", err);
         }
@@ -263,6 +268,7 @@ export default class User {
             console.warn("Logout error:", err);
         }
         this.currentUser = null;
+        this.onAuthChange?.(null);
         await this.renderGoogleButton();
     }
 }

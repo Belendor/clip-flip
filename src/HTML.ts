@@ -2,6 +2,7 @@ import State, { SectionId } from "./State";
 import Metadata from "./HTML/Metada";
 import type { Tag } from "./types";
 import VideoApi from "./VideoApi";
+import User from "./User";
 
 type ToggleTagHandler = (tag: string, active: boolean) => void;
 type DeleteTagHandler = (tag: Tag, videoId?: number) => Promise<void>;
@@ -35,11 +36,14 @@ export default class HTML {
         4: null
     }
 
-    constructor(state: State, api: VideoApi) {
+    user?: User;
+
+    constructor(state: State, api: VideoApi, user?: User) {
         this.state = state;
         this.api = api;
+        this.user = user;
         this.appRoot = document.getElementById("app-root") as HTMLElement;
-        this.metadata = new Metadata(this, this.state, this.api);
+        this.metadata = new Metadata(this, this.state, this.api, this.user);
         this.videoGrid = document.getElementById("video-grid") as HTMLElement;
         this.iconPlay = document.getElementById("icon-play") as HTMLSpanElement;
         this.iconPause = document.getElementById("icon-pause") as HTMLSpanElement;
