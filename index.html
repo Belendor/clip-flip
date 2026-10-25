@@ -203,35 +203,9 @@
         .metadata-middle-row {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-end;
             gap: 8px;
             margin: 2px 0;
-        }
-
-        .metadata-info-left {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            min-width: 0;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        .tag-section-label {
-            font-size: 0.74rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: rgba(255, 255, 255, 0.9);
-            white-space: nowrap;
-        }
-
-        .metadata-info-desc {
-            font-size: 0.72rem;
-            color: rgba(255, 255, 255, 0.55);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .metadata-action-group {
@@ -788,10 +762,10 @@
         <div class="video-grid single-view" id="video-grid">
             <div class="video-section" id="section-1">
                 <div class="video-slot slot-a onscreen" id="slot-1-front">
-                    <video class="player" id="v1-front" autoplay playsinline muted preload="auto"></video>
+                    <video class="player" id="v1-front" playsinline muted preload="auto"></video>
                 </div>
                 <div class="video-slot slot-b offscreen-right" id="slot-1-back">
-                    <video class="player" id="v1-back" autoplay playsinline muted preload="auto"></video>
+                    <video class="player" id="v1-back" playsinline muted preload="auto"></video>
                 </div>
                 <div class="navigation-overlay" id="nav-overlay-1">
                     <div class="nav-zone nav-left" id="nav-left">
@@ -817,30 +791,30 @@
 
             <div class="video-section" id="section-2">
                 <div class="video-slot slot-a onscreen" id="slot-2-front">
-                    <video class="player layer-front" id="v2-front" autoplay playsinline muted preload="auto"></video>
+                    <video class="player layer-front" id="v2-front" playsinline muted preload="auto"></video>
                 </div>
                 <div class="video-slot slot-b offscreen-right" id="slot-2-back">
-                    <video class="player layer-back" id="v2-back" autoplay playsinline muted preload="auto"></video>
+                    <video class="player layer-back" id="v2-back" playsinline muted preload="auto"></video>
                 </div>
                 <div id="metaForm2" class="metadata-form hidden"></div>
             </div>
 
             <div class="video-section" id="section-3">
                 <div class="video-slot slot-a onscreen" id="slot-3-front">
-                    <video class="player layer-front" id="v3-front" autoplay playsinline muted preload="auto"></video>
+                    <video class="player layer-front" id="v3-front" playsinline muted preload="auto"></video>
                 </div>
                 <div class="video-slot slot-b offscreen-right" id="slot-3-back">
-                    <video class="player layer-back" id="v3-back" autoplay playsinline muted preload="auto"></video>
+                    <video class="player layer-back" id="v3-back" playsinline muted preload="auto"></video>
                 </div>
                 <div id="metaForm3" class="metadata-form hidden"></div>
             </div>
 
             <div class="video-section" id="section-4">
                 <div class="video-slot slot-a onscreen" id="slot-4-front">
-                    <video class="player layer-front" id="v4-front" autoplay playsinline muted preload="auto"></video>
+                    <video class="player layer-front" id="v4-front" playsinline muted preload="auto"></video>
                 </div>
                 <div class="video-slot slot-b offscreen-right" id="slot-4-back">
-                    <video class="player layer-back" id="v4-back" autoplay playsinline muted preload="auto"></video>
+                    <video class="player layer-back" id="v4-back" playsinline muted preload="auto"></video>
                 </div>
                 <div id="metaForm4" class="metadata-form hidden"></div>
             </div>

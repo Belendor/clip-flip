@@ -362,19 +362,6 @@ export default class Metadata {
             const middleRow = document.createElement("div");
             middleRow.className = "metadata-middle-row";
 
-            const leftGroup = document.createElement("div");
-            leftGroup.className = "metadata-info-left";
-
-            const videoTagsLabel = document.createElement("span");
-            videoTagsLabel.textContent = "Tags";
-            videoTagsLabel.className = "tag-section-label";
-
-            const infoDesc = document.createElement("span");
-            infoDesc.className = "metadata-info-desc";
-            infoDesc.id = `metadata-desc-${section}`;
-
-            leftGroup.append(videoTagsLabel, infoDesc);
-
             const actionGroup = document.createElement("div");
             actionGroup.className = "metadata-action-group";
 
@@ -384,8 +371,9 @@ export default class Metadata {
             favoriteBtn.innerHTML = `<span class="favorite-heart">♡</span><span class="favorite-count">0</span>`;
             favoriteBtn.title = "Favorite";
 
-            actionGroup.append(favoriteBtn, editToggleBtn);
-            middleRow.append(leftGroup, actionGroup);
+            // Edit first, then favorite
+            actionGroup.append(editToggleBtn, favoriteBtn);
+            middleRow.append(actionGroup);
 
             const divider2 = document.createElement("div");
             divider2.className = "metadata-divider";

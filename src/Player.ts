@@ -126,7 +126,7 @@ class Players {
         player.defaultMuted = true;
         player.volume = this.volume;
         player.playsInline = true;
-        player.autoplay = true;
+        player.autoplay = false;
         player.src = this.buildVideoUrl(videoId);
         player.setAttribute("data-video-id", String(videoId));
         player.load();
@@ -134,6 +134,7 @@ class Players {
 
     private async queuePlayer(player: HTMLVideoElement, videoId: number): Promise<void> {
         this.configurePlayer(player, videoId, "auto");
+        player.pause();
     }
 
     private buildVideoUrl(videoId: number): string {
@@ -642,13 +643,6 @@ class Players {
 
         const form = document.getElementById(`metaForm${section}`) as HTMLDivElement | null;
         if (!form) return;
-
-        const descEl = document.getElementById(`metadata-desc-${section}`);
-        if (descEl) {
-            const subtitle = video?.title || (safeModels.length ? safeModels.map((m) => m.name).join(", ") : "");
-            descEl.textContent = subtitle ? ` • ${subtitle}` : "";
-            descEl.title = subtitle;
-        }
 
         const metadataHeader = document.getElementById(`metadata-header-${section}`);
 
