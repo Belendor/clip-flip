@@ -25,16 +25,18 @@ const port = 3000;
 app.use(cookieParser());
 app.use(
   cors({
-    origin: [
-      "http://127.0.0.1",
-      "http://127.0.0.1:80",
-      "http://localhost",
-      "http://localhost:80",
-      "https://clip-flip.com",
-      "https://www.clip-flip.com",
-      "http://56.228.95.201",
-      "http://56.228.95.201:80",
-    ],
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        origin.includes("clip-flip.com") ||
+        origin.includes("56.228.95.201")
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
     credentials: true,
   })
 );

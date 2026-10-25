@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "concurrently --kill-others \"npm run build:dev\" \"npm run watch:css\" \"npm run start:dev\"",
-    "dev:all": "concurrently --kill-others \"npm run server\" \"npm run build:dev\" \"npm run watch:css\" \"npm run start:dev\"",
+    "dev:all": "concurrently -k -n \"server,webpack,tailwind,frontend\" -c \"magenta,cyan,blue,green\" \"npm run server\" \"npm run build:dev\" \"npm run watch:css\" \"npm run start:dev\"",
     "server": "tsx server/index.ts",
     "test": "tsx --test tests/Config.test.ts tests/State.test.ts tests/VideoApi.test.ts",
     "build:dev": "webpack --watch --mode development",
@@ -13,7 +13,7 @@
     "watch:css": "tailwindcss -i ./src/input.css -o ./dist/output.css --watch",
     "build:css": "tailwindcss -i ./src/input.css -o ./dist/output.css --minify",
     "start": "live-server --port=80 --no-browser --ignore=server/prisma/**,tmp_uploads/**,videos/**,node_modules/**",
-    "start:dev": "live-server ./ --port=80 --no-browser",
+    "start:dev": "live-server ./ --port=8080 --open=/index.html --wait=200",
     "npx": "tailwindcss init",
     "generate-tags": "tsx src/generate-tag-pages.ts"
   },

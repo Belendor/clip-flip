@@ -27,3 +27,9 @@ Thumbs.db
 # Node (if we add build tools later)
 node_modules/
 dist/
+
+# SQLite databases
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
