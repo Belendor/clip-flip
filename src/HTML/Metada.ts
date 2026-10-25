@@ -384,9 +384,6 @@ export default class Metadata {
         this.html.videoTagsContainers[section] = videoTagsWrapper;
         return videoTagsContainer;
     }
-        this.html.videoTagsContainers[section] = videoTagsWrapper;
-        return videoTagsContainer;
-    }
 
     createMetadaEditTags(section: SectionId) {
         const tagButtonWrapper = this.html.createDiv(`tag-button-wrapper-${section}`, "relative inline-block");
