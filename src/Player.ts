@@ -120,6 +120,13 @@ class Players {
         player.src = this.buildVideoUrl(videoId);
         player.setAttribute("data-video-id", String(videoId));
         player.load();
+        player.addEventListener("loadeddata", () => {
+            try {
+                if (player.currentTime === 0) {
+                    player.currentTime = 0.001;
+                }
+            } catch (_) {}
+        }, { once: true });
     }
 
     private async queuePlayer(player: HTMLVideoElement, videoId: number): Promise<void> {
@@ -481,8 +488,16 @@ class Players {
 
             await this.waitForVideoReady(nextPlayer);
             await this.playPlayer(nextPlayer, nextIndex);
-            this.setSectionActivePlayer(section, nextIndex);
-            currentPlayer.pause();
+            const handoff = () => {
+                this.setSectionActivePlayer(section, nextIndex);
+                currentPlayer.pause();
+                currentPlayer.currentTime = 0;
+            };
+            if ("requestVideoFrameCallback" in nextPlayer) {
+                (nextPlayer as any).requestVideoFrameCallback(() => { handoff(); });
+            } else {
+                handoff();
+            }
 
             this.getVideoMetadata(nextVideoId)
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))
