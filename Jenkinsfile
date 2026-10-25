@@ -1,6 +1,6 @@
 // ============================================================
 //  Jenkinsfile — ClipFlip CI/CD Pipeline
-//  Push to main → build TS + Tailwind → deploy to Nginx
+//  Push to main → build TS + Tailwind → update Nginx → reload
 // ============================================================
 
 pipeline {
@@ -59,9 +59,9 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy App') {
             steps {
-                echo "🚀 Deploying to ${env.DEPLOY_DIR}..."
+                echo "🚀 Deploying static assets to ${env.DEPLOY_DIR}..."
                 sh """
                     sudo mkdir -p ${env.DEPLOY_DIR}/dist ${env.DEPLOY_DIR}/src
 
@@ -77,11 +77,24 @@ pipeline {
             }
         }
 
+        stage('Deploy Nginx Config') {
+            steps {
+                echo "🌐 Deploying Nginx site configuration..."
+                sh """
+                    if [ -f nginx/clipflip.conf ]; then
+                        sudo cp nginx/clipflip.conf /etc/nginx/sites-available/clipflip
+                        sudo cp nginx/clipflip.conf /etc/nginx/sites-enabled/clipflip
+                        sudo rm -f /etc/nginx/sites-enabled/default
+                    fi
+                """
+            }
+        }
+
         stage('Reload Nginx') {
             steps {
-                echo "🔄 Reloading Nginx..."
-                sh 'sudo systemctl reload nginx'
-                echo "✅ Live at http://56.228.95.201"
+                echo "🔄 Reloading Nginx service..."
+                sh 'sudo systemctl reload nginx || sudo systemctl restart nginx'
+                echo "✅ Nginx reloaded successfully. Live at http://56.228.95.201"
             }
         }
     }

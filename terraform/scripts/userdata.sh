@@ -96,7 +96,7 @@ systemctl start jenkins
 
 # ── Sudoers — Jenkins can deploy without password ─────────────
 cat > /etc/sudoers.d/jenkins-nginx <<'SUDOERS'
-jenkins ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx, /bin/cp, /bin/rm, /bin/mkdir, /bin/chown, /bin/chmod
+jenkins ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx, /usr/sbin/nginx, /bin/cp, /bin/rm, /bin/mkdir, /bin/chown, /bin/chmod, /bin/ln
 SUDOERS
 chmod 440 /etc/sudoers.d/jenkins-nginx
 
