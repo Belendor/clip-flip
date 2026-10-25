@@ -387,6 +387,10 @@ class Players {
         if (volumeSlider && !this.muted) {
             volumeSlider.value = String(Math.round(this.volume * 100));
         }
+        const volumeHint = document.getElementById("volumeSliderHint");
+        if (volumeHint) {
+            volumeHint.textContent = this.muted ? "Muted" : `${Math.round(this.volume * 100)}%`;
+        }
         try {
             localStorage.setItem("clipflip_volume", String(this.volume));
             localStorage.setItem("clipflip_muted", String(this.muted));

@@ -179,13 +179,15 @@ export default class HTML {
             deleteButton.className = "tag-delete";
             deleteButton.classList.toggle("hidden", !this.state.advancedMode);
             deleteButton.innerHTML = "&times;";
-            deleteButton.title = `Remove tag "${tag.title}"`;
+            deleteButton.title = `Delete tag "${tag.title}"`;
+            deleteButton.addEventListener("mouseenter", () => button.classList.add("is-deleting"));
+            deleteButton.addEventListener("mouseleave", () => button.classList.remove("is-deleting"));
             deleteButton.addEventListener("click", async (event) => {
                 event.preventDefault();
                 event.stopPropagation();
 
                 if (!onDeleteTag || !videoId) return;
-                if (!confirm(`Remove tag "${tag.title}" from this video?`)) return;
+                if (!confirm(`Delete tag "${tag.title}" from this video?`)) return;
 
                 await onDeleteTag(tag, videoId);
                 button.remove();

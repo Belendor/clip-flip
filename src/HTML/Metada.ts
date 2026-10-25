@@ -341,10 +341,7 @@ export default class Metadata {
             const videoTagsLabel = document.createElement("div");
             videoTagsLabel.textContent = "Tags";
             videoTagsLabel.className = "tag-section-label";
-            const metadataHint = document.createElement("div");
-            metadataHint.textContent = "Tap tags to filter video stream";
-            metadataHint.className = "metadata-subtitle";
-            metadataTitleGroup.append(videoTagsLabel, metadataHint);
+            metadataTitleGroup.append(videoTagsLabel);
 
             const favoriteBtn = document.createElement("button");
             favoriteBtn.type = "button";
