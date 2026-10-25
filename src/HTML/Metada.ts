@@ -158,9 +158,12 @@ export default class Metadata {
 
         topBar.append(metaDataTabs, closeMetadataBtn);
 
+        const divider1 = document.createElement("div");
+        divider1.className = "metadata-divider";
+
         const metaDataBody = this.createMetadaBody(section, form);
         const metaDataEdit = this.createMetadaEdit(section);
-        form.append(dragHandle, topBar, metaDataBody, metaDataEdit);
+        form.append(dragHandle, topBar, divider1, metaDataBody, metaDataEdit);
 
         const uploadFormWrapper = document.createElement("div");
         uploadFormWrapper.className = "upload-form hidden";
@@ -349,19 +352,28 @@ export default class Metadata {
             clipActions.append(addClipBtn, removeClipBtn);
             middleRow.append(clipActions);
 
-            const divider = document.createElement("div");
-            divider.className = "metadata-divider";
+            const divider2 = document.createElement("div");
+            divider2.className = "metadata-divider";
 
-            videoTagsContainer.append(middleRow, divider, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider2, videoTagsWrapper);
         } else {
             editToggleBtn.classList.remove("hidden");
 
             const middleRow = document.createElement("div");
             middleRow.className = "metadata-middle-row";
 
+            const leftGroup = document.createElement("div");
+            leftGroup.className = "metadata-info-left";
+
             const videoTagsLabel = document.createElement("span");
             videoTagsLabel.textContent = "Tags";
             videoTagsLabel.className = "tag-section-label";
+
+            const infoDesc = document.createElement("span");
+            infoDesc.className = "metadata-info-desc";
+            infoDesc.id = `metadata-desc-${section}`;
+
+            leftGroup.append(videoTagsLabel, infoDesc);
 
             const actionGroup = document.createElement("div");
             actionGroup.className = "metadata-action-group";
@@ -373,12 +385,12 @@ export default class Metadata {
             favoriteBtn.title = "Favorite";
 
             actionGroup.append(favoriteBtn, editToggleBtn);
-            middleRow.append(videoTagsLabel, actionGroup);
+            middleRow.append(leftGroup, actionGroup);
 
-            const divider = document.createElement("div");
-            divider.className = "metadata-divider";
+            const divider2 = document.createElement("div");
+            divider2.className = "metadata-divider";
 
-            videoTagsContainer.append(middleRow, divider, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider2, videoTagsWrapper);
         }
 
         this.html.videoTagsContainers[section] = videoTagsWrapper;

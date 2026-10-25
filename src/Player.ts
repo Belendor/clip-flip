@@ -25,9 +25,8 @@ class Players {
         try {
             const savedVol = localStorage.getItem("clipflip_volume");
             if (savedVol !== null) this.volume = Math.max(0, Math.min(1, parseFloat(savedVol)));
-            const savedMuted = localStorage.getItem("clipflip_muted");
-            if (savedMuted !== null) this.muted = savedMuted === "true";
         } catch (_) {}
+        this.muted = true;
         this.state.onEmptyPlays = () => this.showNoVideosBox();
         this.user.init();
     }
@@ -307,23 +306,52 @@ class Players {
             this.html.fullscreenButton.classList.toggle("is-fullscreen", !!document.fullscreenElement);
         });
 
-        const volumeSlider = document.getElementById("volumeSlider") as HTMLInputElement | null;
-        if (volumeSlider) {
-            volumeSlider.value = String(Math.round(this.volume * 100));
-            volumeSlider.addEventListener("input", (e) => {
-                e.stopPropagation();
-                const val = Number(volumeSlider.value);
-                this.volume = val / 100;
-                this.muted = val === 0;
-                this.syncAudioState();
-            });
-        }
+        const volumeTrackBar = document.getElementById("volumeTrackBar");
+        const volumeWrapper = document.getElementById("volumeSliderWrapper");
+        let isDraggingVolume = false;
 
-        this.html.muteToggle.addEventListener("click", () => {
+        const updateVolumeFromPointer = (clientY: number) => {
+            if (!volumeTrackBar) return;
+            const rect = volumeTrackBar.getBoundingClientRect();
+            const rawPercent = ((rect.bottom - clientY) / rect.height) * 100;
+            const clamped = Math.max(0, Math.min(100, Math.round(rawPercent)));
+            this.volume = clamped / 100;
+            this.muted = clamped === 0;
+            this.syncAudioState();
+        };
+
+        volumeTrackBar?.addEventListener("pointerdown", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            isDraggingVolume = true;
+            try { volumeTrackBar.setPointerCapture(e.pointerId); } catch (_) {}
+            volumeWrapper?.classList.add("is-active");
+            updateVolumeFromPointer(e.clientY);
+        });
+
+        volumeTrackBar?.addEventListener("pointermove", (e) => {
+            if (!isDraggingVolume) return;
+            e.stopPropagation();
+            e.preventDefault();
+            updateVolumeFromPointer(e.clientY);
+        });
+
+        const stopVolumeDrag = (e: PointerEvent) => {
+            if (isDraggingVolume) {
+                isDraggingVolume = false;
+                try { volumeTrackBar?.releasePointerCapture(e.pointerId); } catch (_) {}
+                volumeWrapper?.classList.remove("is-active");
+            }
+        };
+
+        volumeTrackBar?.addEventListener("pointerup", stopVolumeDrag);
+        volumeTrackBar?.addEventListener("pointercancel", stopVolumeDrag);
+
+        this.html.muteToggle.addEventListener("click", (e) => {
+            e.stopPropagation();
             this.muted = !this.muted;
             if (!this.muted && this.volume === 0) {
-                this.volume = 0.4;
-                if (volumeSlider) volumeSlider.value = "40";
+                this.volume = 0.5;
             }
             this.syncAudioState();
         });
@@ -383,14 +411,22 @@ class Players {
             player.muted = this.muted;
             player.volume = this.volume;
         });
-        const volumeSlider = document.getElementById("volumeSlider") as HTMLInputElement | null;
-        if (volumeSlider && !this.muted) {
-            volumeSlider.value = String(Math.round(this.volume * 100));
-        }
+
+        const fillEl = document.getElementById("volumeTrackFill");
+        const thumbEl = document.getElementById("volumeTrackThumb");
         const volumeHint = document.getElementById("volumeSliderHint");
-        if (volumeHint) {
-            volumeHint.textContent = this.muted ? "Muted" : `${Math.round(this.volume * 100)}%`;
+        const percent = Math.round(this.volume * 100);
+
+        if (this.muted) {
+            if (fillEl) fillEl.style.height = "0%";
+            if (thumbEl) thumbEl.style.bottom = "0%";
+            if (volumeHint) volumeHint.textContent = "Muted";
+        } else {
+            if (fillEl) fillEl.style.height = `${percent}%`;
+            if (thumbEl) thumbEl.style.bottom = `${percent}%`;
+            if (volumeHint) volumeHint.textContent = `${percent}%`;
         }
+
         try {
             localStorage.setItem("clipflip_volume", String(this.volume));
             localStorage.setItem("clipflip_muted", String(this.muted));
@@ -585,6 +621,13 @@ class Players {
 
         const form = document.getElementById(`metaForm${section}`) as HTMLDivElement | null;
         if (!form) return;
+
+        const descEl = document.getElementById(`metadata-desc-${section}`);
+        if (descEl) {
+            const subtitle = video?.title || (safeModels.length ? safeModels.map((m) => m.name).join(", ") : "");
+            descEl.textContent = subtitle ? ` • ${subtitle}` : "";
+            descEl.title = subtitle;
+        }
 
         const metadataHeader = document.getElementById(`metadata-header-${section}`);
 
