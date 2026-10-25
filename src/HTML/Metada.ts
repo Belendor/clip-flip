@@ -154,6 +154,7 @@ export default class Metadata {
             this.state.advancedMode = false;
             this.metaVisible[section] = false;
             this.setMetadataVisibility(form, false);
+            this.html.hideFormsBtn?.classList.remove("is-active");
         });
 
         topBar.append(metaDataTabs, closeMetadataBtn);

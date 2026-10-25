@@ -118,6 +118,8 @@ export default class HTML {
                 this.metadata.setMetadataVisibility(formElement, targetState);
             }
         });
+
+        this.hideFormsBtn?.classList.toggle("is-active", targetState);
     }
 
     createDiv(id: string, className = ""): HTMLDivElement {
