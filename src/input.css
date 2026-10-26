@@ -1219,20 +1219,18 @@ body {
 }
 
 /* Metadata Toggle Button (Hide / Show) */
-#hideForms .icon-metadata-open {
-    display: inline-flex !important;
+#hideForms:not(.is-closed) {
+    opacity: 0.45;
+    color: rgba(255, 255, 255, 0.45);
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.02);
 }
 
-#hideForms .icon-metadata-closed {
-    display: none !important;
-}
-
-#hideForms.is-closed .icon-metadata-open {
-    display: none !important;
-}
-
-#hideForms.is-closed .icon-metadata-closed {
-    display: inline-flex !important;
+#hideForms:not(.is-closed):hover {
+    opacity: 0.85;
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 /* When closed, metadata button burns vibrant green as the most important button to know */
