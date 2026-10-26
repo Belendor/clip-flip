@@ -34,7 +34,19 @@ export default class HTML {
         2: null,
         3: null,
         4: null
-    }
+    };
+    suggestedTagsBoxes: { [key: number]: HTMLDivElement | null } = {
+        1: null,
+        2: null,
+        3: null,
+        4: null
+    };
+    suggestedTagsContainers: { [key: number]: HTMLDivElement | null } = {
+        1: null,
+        2: null,
+        3: null,
+        4: null
+    };
 
     user?: User;
 
@@ -332,6 +344,63 @@ export default class HTML {
         addPillWrapper.append(addPill, popover);
         fragment.appendChild(document.createElement("br"));
         fragment.appendChild(addPillWrapper);
+
+        container.appendChild(fragment);
+    }
+
+    renderSuggestedTags(
+        container: HTMLElement,
+        box: HTMLElement,
+        suggestedTags: Tag[],
+        currentTags: Tag[],
+        pendingTags: Set<string>,
+        onAddTag: (title: string, id?: number) => Promise<void>
+    ) {
+        container.innerHTML = "";
+        const currentTitles = new Set(
+            (currentTags || []).map((t) => (t.title || "").toLowerCase().trim()).filter(Boolean)
+        );
+        const availableSuggestions = (suggestedTags || []).filter((t) => {
+            if (!t.title) return false;
+            const clean = t.title.toLowerCase().trim();
+            return !currentTitles.has(clean) && !pendingTags.has(clean);
+        });
+
+        if (availableSuggestions.length === 0) {
+            box.classList.add("hidden");
+            return;
+        }
+
+        box.classList.remove("hidden");
+        const fragment = document.createDocumentFragment();
+
+        availableSuggestions.forEach((tag) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "suggested-tag-btn";
+            btn.title = `Add "${tag.title}" to this video`;
+            btn.innerHTML = `<span class="suggested-tag-plus">+</span><span>${tag.title}</span>`;
+
+            btn.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const clean = (tag.title || "").toLowerCase().trim();
+                pendingTags.add(clean);
+                btn.style.opacity = "0.4";
+                btn.style.pointerEvents = "none";
+                btn.remove();
+                if (container.children.length === 0) {
+                    box.classList.add("hidden");
+                }
+                try {
+                    await onAddTag(tag.title, tag.id);
+                } catch (err) {
+                    pendingTags.delete(clean);
+                    console.error("Failed to add suggested tag:", err);
+                }
+            });
+
+            fragment.appendChild(btn);
+        });
 
         container.appendChild(fragment);
     }

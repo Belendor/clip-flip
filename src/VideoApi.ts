@@ -42,6 +42,27 @@ export default class VideoApi {
         });
     }
 
+    private tagsByTitleCache = new Map<string, Promise<Tag[]>>();
+
+    async fetchTagsByTitle(title: string): Promise<Tag[]> {
+        const cleanTitle = title.trim();
+        if (!cleanTitle) return [];
+        const cacheKey = cleanTitle.toLowerCase();
+        if (this.tagsByTitleCache.has(cacheKey)) {
+            return this.tagsByTitleCache.get(cacheKey)!;
+        }
+
+        const promise = this.request<Tag[]>(`/videos/tags-by-title?title=${encodeURIComponent(cleanTitle)}`)
+            .catch((err) => {
+                console.error("fetchTagsByTitle error:", err);
+                this.tagsByTitleCache.delete(cacheKey);
+                return [];
+            });
+
+        this.tagsByTitleCache.set(cacheKey, promise);
+        return promise;
+    }
+
     async fetchVideoMetadata(videoId: number): Promise<VideoWithRelations> {
         return this.request<VideoWithRelations>(`/videos/${videoId}`);
     }

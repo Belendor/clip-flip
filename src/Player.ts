@@ -10,6 +10,8 @@ type SectionSwapState = Record<SectionId, boolean>;
 class Players {
     private readonly metadataCache = new Map<number, Promise<VideoWithRelations | NewVideo | null>>();
     private readonly pendingSwap: SectionSwapState = { 1: false, 2: false, 3: false, 4: false };
+    private readonly pendingSuggestedTags = new Map<SectionId, Set<string>>();
+    private readonly lastPopulatedVideoId = new Map<SectionId, number>();
 
     private loadRevision = 0;
     private muted = true;
@@ -931,6 +933,43 @@ class Players {
                 }
             }
         );
+
+        if (this.lastPopulatedVideoId.get(section) !== video.id) {
+            this.lastPopulatedVideoId.set(section, video.id);
+            this.pendingSuggestedTags.set(section, new Set());
+        }
+
+        const suggestedWrapper = this.html.suggestedTagsContainers[section];
+        const suggestedBox = this.html.suggestedTagsBoxes[section];
+        if (suggestedWrapper && suggestedBox) {
+            const rawTitle = (video.title || "").trim();
+            if (rawTitle) {
+                const pending = this.pendingSuggestedTags.get(section) || new Set();
+                void this.api.fetchTagsByTitle(rawTitle).then((suggestedTags) => {
+                    if (this.lastPopulatedVideoId.get(section) !== video.id) return;
+                    this.html.renderSuggestedTags(
+                        suggestedWrapper,
+                        suggestedBox,
+                        suggestedTags,
+                        safeTags,
+                        pending,
+                        async (tagTitle: string, tagId?: number) => {
+                            const updated = await this.updateMeta(section, "tag", tagTitle, tagId);
+                            if (updated) {
+                                if (tagTitle && !this.state.allTags.some((t) => t.title.toLowerCase() === tagTitle.toLowerCase())) {
+                                    const newTagObj = updated.tags?.find((t) => t.title.toLowerCase() === tagTitle.toLowerCase()) || { id: tagId ?? 0, title: tagTitle };
+                                    this.state.allTags.push(newTagObj);
+                                }
+                                await this.populateMetadataForm(section, updated);
+                            }
+                        }
+                    );
+                });
+            } else {
+                suggestedBox.classList.add("hidden");
+                suggestedWrapper.innerHTML = "";
+            }
+        }
     }
 
     private async tryPreserveCurrentVideoOnTagChange(section: SectionId): Promise<boolean> {

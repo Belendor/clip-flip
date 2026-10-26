@@ -256,6 +256,52 @@ app.post('/videos/remove-tag', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/videos/tags-by-title', async (req: Request, res: Response) => {
+  try {
+    const rawTitle = req.query.title?.toString().trim();
+    if (!rawTitle) {
+      return res.json([]);
+    }
+
+    const videos = await prisma.video.findMany({
+      where: {
+        title: rawTitle,
+      },
+      select: {
+        id: true,
+        tags: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    const tagCounts = new Map<string, { id: number; title: string; count: number }>();
+    for (const v of videos) {
+      for (const t of v.tags) {
+        if (!t.title) continue;
+        const key = t.title.toLowerCase().trim();
+        const existing = tagCounts.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          tagCounts.set(key, { id: t.id, title: t.title.trim(), count: 1 });
+        }
+      }
+    }
+
+    const result = Array.from(tagCounts.values()).sort(
+      (a, b) => b.count - a.count || a.title.localeCompare(b.title)
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching tags by title:', error);
+    res.status(500).json({ error: 'Failed to fetch tags by title' });
+  }
+});
+
 app.get('/videos/:id', async (req: Request, res: Response) => {
   const videoId = parseInt(req.params.id);
 

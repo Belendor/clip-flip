@@ -2035,3 +2035,70 @@ body {
         transform: scale(1.06);
     }
 }
+
+/* Suggested Tags from Scene */
+.suggested-tags-box {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.suggested-tags-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 2px 4px 2px;
+}
+
+.suggested-tags-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(147, 197, 253, 0.85);
+}
+
+.suggested-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+}
+
+.suggested-tag-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px dashed rgba(96, 165, 250, 0.45);
+    color: #bfdbfe;
+    font-size: 0.74rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+}
+
+.suggested-tag-btn:hover {
+    background: rgba(59, 130, 246, 0.28);
+    border-color: #60a5fa;
+    color: #ffffff;
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+}
+
+.suggested-tag-btn:active {
+    transform: scale(0.96);
+}
+
+.suggested-tag-plus {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #60a5fa;
+}

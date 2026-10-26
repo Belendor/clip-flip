@@ -396,7 +396,32 @@ export default class Metadata {
             videoTagsContainer.append(middleRow, divider2, videoTagsWrapper);
         }
 
+        const suggestedBox = document.createElement("div");
+        suggestedBox.id = `suggested-tags-box-${section}`;
+        suggestedBox.className = "suggested-tags-box hidden";
+
+        const suggestedDivider = document.createElement("div");
+        suggestedDivider.className = "metadata-divider";
+
+        const suggestedHeader = document.createElement("div");
+        suggestedHeader.className = "suggested-tags-header";
+        suggestedHeader.innerHTML = `
+            <span class="suggested-tags-title">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                    <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                </svg>
+                Suggested from scene
+            </span>
+        `;
+
+        const suggestedWrapper = this.html.createDiv(`suggested-tags-wrapper-${section}`, "tag-container suggested-tag-list");
+        suggestedBox.append(suggestedDivider, suggestedHeader, suggestedWrapper);
+        videoTagsContainer.append(suggestedBox);
+
         this.html.videoTagsContainers[section] = videoTagsWrapper;
+        this.html.suggestedTagsBoxes[section] = suggestedBox;
+        this.html.suggestedTagsContainers[section] = suggestedWrapper;
         return videoTagsContainer;
     }
 
