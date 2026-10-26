@@ -1024,6 +1024,12 @@ app.post(
         }
       }
 
+      if (processedSegments.length === 0) {
+        return res.status(400).json({
+          error: "No valid video segments could be generated. Uploaded videos must be at least 2 seconds long.",
+        });
+      }
+
       const BATCH_SIZE = 10;
       const confirmResults = [];
 

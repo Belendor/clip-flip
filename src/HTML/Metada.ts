@@ -256,22 +256,40 @@ export default class Metadata {
                 filePreviewBox.appendChild(item);
 
                 const dur = await checkClipDuration(f);
-                const isTooHeavy = f.size > 5 * 1024 * 1024;
-                const isTooLong = dur > 5.05;
-                const isTooShort = dur > 0 && dur < 1.95;
 
-                if (isTooHeavy) {
-                    item.className = "upload-preview-item is-invalid";
-                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too heavy (${sizeMb} MB)</span>`;
-                } else if (isTooLong) {
-                    item.className = "upload-preview-item is-invalid";
-                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too long (${dur.toFixed(1)}s)</span>`;
-                } else if (isTooShort) {
-                    item.className = "upload-preview-item is-invalid";
-                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too short (${dur.toFixed(1)}s)</span>`;
+                if (!config.isLocal) {
+                    const isTooHeavy = f.size > 5 * 1024 * 1024;
+                    const isTooLong = dur > 5.05;
+                    const isTooShort = dur > 0 && dur < 1.95;
+
+                    if (isTooHeavy) {
+                        item.className = "upload-preview-item is-invalid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too heavy (${sizeMb} MB)</span>`;
+                    } else if (isTooLong) {
+                        item.className = "upload-preview-item is-invalid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too long (${dur.toFixed(1)}s)</span>`;
+                    } else if (isTooShort) {
+                        item.className = "upload-preview-item is-invalid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too short (${dur.toFixed(1)}s)</span>`;
+                    } else {
+                        item.className = "upload-preview-item is-valid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-emerald-400 font-mono text-[10px]">✓ ${sizeMb} MB${dur > 0 ? ', ' + dur.toFixed(1) + 's' : ''}</span>`;
+                    }
                 } else {
-                    item.className = "upload-preview-item is-valid";
-                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-emerald-400 font-mono text-[10px]">✓ ${sizeMb} MB${dur > 0 ? ', ' + dur.toFixed(1) + 's' : ''}</span>`;
+                    if (dur > 0 && dur < 1.95) {
+                        item.className = "upload-preview-item is-invalid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too short (${dur.toFixed(1)}s < 2s)</span>`;
+                    } else if (dur >= 1.95 && dur <= 5.05) {
+                        item.className = "upload-preview-item is-valid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-emerald-400 font-mono text-[10px]">✓ Single clip (${dur.toFixed(1)}s, ${sizeMb} MB)</span>`;
+                    } else if (dur > 5.05) {
+                        const count = Math.floor(dur / 4);
+                        item.className = "upload-preview-item is-valid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-emerald-400 font-mono text-[10px]">✓ Slices into ~${count} clips (${dur.toFixed(0)}s, ${sizeMb} MB)</span>`;
+                    } else {
+                        item.className = "upload-preview-item is-valid";
+                        item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-emerald-400 font-mono text-[10px]">✓ ${sizeMb} MB (unprocessed)</span>`;
+                    }
                 }
             }
         });
@@ -287,7 +305,11 @@ export default class Metadata {
 
         const qualityNotice = document.createElement("div");
         qualityNotice.className = "text-[11px] text-amber-300/90 mb-3 p-2 bg-black/40 rounded border border-amber-500/20";
-        qualityNotice.innerHTML = `⚠️ <strong>Quality rules:</strong> Clips must be <strong>2s–5s</strong> and max <strong>5 MB</strong>.`;
+        if (config.isLocal) {
+            qualityNotice.innerHTML = `💻 <strong>Local Processing:</strong> Videos of any length will be automatically sliced into 4s clips (or kept if 2s–5s) and uploaded directly to production.`;
+        } else {
+            qualityNotice.innerHTML = `⚠️ <strong>Quality rules:</strong> Clips must be <strong>2s–5s</strong> and max <strong>5 MB</strong>.`;
+        }
 
         const submitUploadBtn = document.createElement("button");
         submitUploadBtn.type = "button";
@@ -305,26 +327,36 @@ export default class Metadata {
             }
 
             // Validate file sizes and durations client-side for immediate clear feedback
-            for (const f of Array.from(fileInput.files)) {
-                if (f.size > 5 * 1024 * 1024) {
-                    alert(`❌ Video is too heavy:\n"${f.name}" is ${(f.size / (1024 * 1024)).toFixed(2)} MB.\n\nMaximum allowed size is 5 MB.`);
-                    return;
-                }
+            if (!config.isLocal) {
+                for (const f of Array.from(fileInput.files)) {
+                    if (f.size > 5 * 1024 * 1024) {
+                        alert(`❌ Video is too heavy:\n"${f.name}" is ${(f.size / (1024 * 1024)).toFixed(2)} MB.\n\nMaximum allowed size on web is 5 MB.`);
+                        return;
+                    }
 
-                const dur = await checkClipDuration(f);
-                if (dur > 5.05) {
-                    alert(`❌ Video is too long:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nClips must be 5 seconds or shorter (allowed range: 2s–5s).`);
-                    return;
+                    const dur = await checkClipDuration(f);
+                    if (dur > 5.05) {
+                        alert(`❌ Video is too long:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nClips uploaded directly via web must be 5 seconds or shorter (allowed range: 2s–5s).`);
+                        return;
+                    }
+                    if (dur > 0 && dur < 1.95) {
+                        alert(`❌ Video is too short:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nClips must be at least 2 seconds (allowed range: 2s–5s).`);
+                        return;
+                    }
                 }
-                if (dur > 0 && dur < 1.95) {
-                    alert(`❌ Video is too short:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nClips must be at least 2 seconds (allowed range: 2s–5s).`);
-                    return;
+            } else {
+                for (const f of Array.from(fileInput.files)) {
+                    const dur = await checkClipDuration(f);
+                    if (dur > 0 && dur < 1.95) {
+                        alert(`❌ Video is too short:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nVideos must be at least 2 seconds long.`);
+                        return;
+                    }
                 }
             }
 
             submitUploadBtn.disabled = true;
             const originalText = submitUploadBtn.textContent;
-            submitUploadBtn.textContent = "Processing & Uploading to Prod...";
+            submitUploadBtn.textContent = config.isLocal ? "Slicing & Uploading to Prod..." : "Processing & Uploading to Prod...";
             const formData = new FormData();
             Array.from(fileInput.files).forEach((file) => formData.append("files", file));
             formData.append("title", uploadTitleInput.value.trim());
@@ -345,7 +377,10 @@ export default class Metadata {
                 this.setUploadFormVisibility(false);
             } catch (error) {
                 console.error("Upload failed", error);
-                alert(error instanceof Error ? error.message : "Upload failed. Please check that clips are between 2s-5s and max 5MB.");
+                const defaultMsg = config.isLocal
+                    ? "Upload failed. Please ensure your local backend is running (npm run server) and ffmpeg is installed."
+                    : "Upload failed. Please check that clips are between 2s-5s and max 5MB.";
+                alert(error instanceof Error ? error.message : defaultMsg);
             } finally {
                 submitUploadBtn.disabled = false;
                 submitUploadBtn.textContent = originalText;
