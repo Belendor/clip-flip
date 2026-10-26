@@ -12,6 +12,7 @@ class Players {
     private readonly pendingSwap: SectionSwapState = { 1: false, 2: false, 3: false, 4: false };
     private readonly pendingSuggestedTags = new Map<SectionId, Set<string>>();
     private readonly lastPopulatedVideoId = new Map<SectionId, number>();
+    private isSwitchingMode = false;
 
     private loadRevision = 0;
     private muted = true;
@@ -34,8 +35,18 @@ class Players {
         this.user.init();
     }
 
-    showLoader() {
-        document.getElementById("video-loader")?.classList.remove("hidden");
+    showLoader(text?: string) {
+        const loader = document.getElementById("video-loader");
+        if (loader) {
+            if (text) {
+                const textEl = loader.querySelector(".video-loader-text");
+                if (textEl) textEl.textContent = text;
+            } else {
+                const textEl = loader.querySelector(".video-loader-text");
+                if (textEl && !textEl.textContent) textEl.textContent = "Loading videos...";
+            }
+            loader.classList.remove("hidden");
+        }
     }
 
     hideLoader() {
@@ -66,18 +77,21 @@ class Players {
         }
 
         if (this.state.state === "trending") {
+            this.showLoader("Loading trending videos...");
             this.state.randomized = false;
             await this.state.fetchTrendingVideos();
         } else if (this.state.state === "liked") {
+            this.showLoader("Loading liked videos...");
             this.state.randomized = false;
             await this.state.fetchLikedVideos(this.user.getId());
         } else if (this.state.state === "new") {
+            this.showLoader("Loading new clips...");
             this.state.randomized = false;
             await this.state.fetchNewVideos();
         }
 
         if (hasCache) {
-            await this.loadVideos(false);
+            await this.loadVideos(this.state.state !== "random");
             void Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
         } else {
             this.showLoader();
@@ -87,7 +101,7 @@ class Players {
     }
 
     async loadVideos(showSpinner = true): Promise<void> {
-        if (showSpinner && !this.state.hasCachedData) {
+        if (showSpinner) {
             this.showLoader();
         }
         const revision = ++this.loadRevision;
@@ -337,6 +351,8 @@ class Players {
                         this.user.promptLogin("Please sign in to view your liked videos");
                         return;
                     }
+                    metaTab.querySelectorAll(".metadata-tab").forEach(t => t.classList.remove("active"));
+                    targetBtn.classList.add("active");
                     await this.switchMode(mode);
                 };
             });
@@ -1152,7 +1168,19 @@ class Players {
 
     private async switchMode(mode: "random" | "trending" | "liked" | "new" | "favorite") {
         const normalizedMode = mode === "favorite" ? "liked" : mode;
-        if (this.state.state === normalizedMode) return;
+        if (this.state.state === normalizedMode || this.isSwitchingMode) return;
+        this.isSwitchingMode = true;
+
+        this.showLoader(
+            normalizedMode === "trending"
+                ? "Loading trending videos..."
+                : normalizedMode === "liked"
+                ? "Loading liked videos..."
+                : normalizedMode === "new"
+                ? "Loading new clips..."
+                : "Loading videos..."
+        );
+
         this.state.state = normalizedMode;
         try {
             localStorage.setItem("clipflip_mode", normalizedMode);
@@ -1160,33 +1188,37 @@ class Players {
         this.metadataCache.clear();
         this.resetPlaybackSurface();
 
-        switch (normalizedMode) {
-            case "random":
-                this.state.randomized = true;
-                this.state.endIndex = config.defaultEndIndex;
-                const pool = this.state.taggedVideos && this.state.taggedVideos.length > 0 ? this.state.taggedVideos : null;
-                const randomStartId = pool
-                    ? pool[Math.floor(Math.random() * pool.length)].id
-                    : this.state.randomInRange(1, this.state.endIndex);
-                this.state.positions = { 1: randomStartId, 2: randomStartId, 3: randomStartId, 4: randomStartId };
-                break;
-            case "trending":
-                this.state.randomized = false;
-                await this.state.fetchTrendingVideos();
-                break;
-            case "liked":
-                this.state.randomized = false;
-                await this.state.fetchLikedVideos(this.user.getId());
-                break;
-            case "new":
-                this.state.randomized = false;
-                await this.state.fetchNewVideos();
-                break;
+        try {
+            switch (normalizedMode) {
+                case "random":
+                    this.state.randomized = true;
+                    this.state.endIndex = config.defaultEndIndex;
+                    const pool = this.state.taggedVideos && this.state.taggedVideos.length > 0 ? this.state.taggedVideos : null;
+                    const randomStartId = pool
+                        ? pool[Math.floor(Math.random() * pool.length)].id
+                        : this.state.randomInRange(1, this.state.endIndex);
+                    this.state.positions = { 1: randomStartId, 2: randomStartId, 3: randomStartId, 4: randomStartId };
+                    break;
+                case "trending":
+                    this.state.randomized = false;
+                    await this.state.fetchTrendingVideos();
+                    break;
+                case "liked":
+                    this.state.randomized = false;
+                    await this.state.fetchLikedVideos(this.user.getId());
+                    break;
+                case "new":
+                    this.state.randomized = false;
+                    await this.state.fetchNewVideos();
+                    break;
+            }
+            this.html.init();
+            this.html.metadata.init();
+            this.attachMetadataTabListeners();
+            await this.loadVideos(true);
+        } finally {
+            this.isSwitchingMode = false;
         }
-        this.html.init();
-        this.html.metadata.init();
-        this.attachMetadataTabListeners();
-        await this.loadVideos();
     }
 }
 
