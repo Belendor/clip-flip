@@ -208,17 +208,25 @@ export default class Metadata {
         submitUploadBtn.className = "upload-submit-btn";
         submitUploadBtn.addEventListener("click", async () => {
             if (!fileInput.files?.length) { alert("Please select a file."); return; }
+            submitUploadBtn.disabled = true;
+            const originalText = submitUploadBtn.textContent;
+            submitUploadBtn.textContent = "Processing & Uploading to Prod...";
             const formData = new FormData();
             Array.from(fileInput.files).forEach((file) => formData.append("files", file));
-            formData.append("title", uploadTitleInput.value);
+            formData.append("title", uploadTitleInput.value.trim());
             formData.append("tagId", uploadTagSelect.value);
             try {
                 await this.api.uploadVideo(formData);
-                alert("Upload successful");
+                alert("Upload successful! Video processed and uploaded to production.");
+                fileInput.value = "";
+                uploadTitleInput.value = "";
                 this.setUploadFormVisibility(false);
             } catch (error) {
                 console.error("Upload failed", error);
-                alert("Upload failed");
+                alert("Upload failed. Please check the local server terminal for details.");
+            } finally {
+                submitUploadBtn.disabled = false;
+                submitUploadBtn.textContent = originalText;
             }
         });
 

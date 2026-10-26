@@ -793,12 +793,14 @@ app.post(
             throw new Error(`FFmpeg ran but segment file was not created: ${videoOut}`);
           }
 
+          const videoTitle = title && String(title).trim() ? `${String(title).trim()},${file.originalname}` : file.originalname;
+
           processedSegments.push({
             tempKey,
             tempVideoName,
             tempFirstThumbName,
             tempMiddleThumbName,
-            title: title + "," + file.originalname,
+            title: videoTitle,
             startTime: start,
             endTime: end,
           });
@@ -841,11 +843,22 @@ app.post(
             },
             maxBodyLength: Infinity,
             maxContentLength: Infinity,
+            timeout: 180000,
           }
         );
 
         if (confirmResponse.data?.videos) {
           confirmResults.push(...confirmResponse.data.videos);
+        }
+
+        // Clean up temp segment binaries on local machine after successful transfer
+        for (const seg of batch) {
+          const videoPath = path.join(tempBaseDir, seg.tempVideoName);
+          const firstThumbPath = path.join(tempThumbDir, seg.tempFirstThumbName);
+          const midThumbPath = path.join(tempThumbDir, seg.tempMiddleThumbName);
+          if (fsSync.existsSync(videoPath)) fsSync.unlinkSync(videoPath);
+          if (fsSync.existsSync(firstThumbPath)) fsSync.unlinkSync(firstThumbPath);
+          if (fsSync.existsSync(midThumbPath)) fsSync.unlinkSync(midThumbPath);
         }
       }
 

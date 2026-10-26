@@ -513,7 +513,7 @@ class Players {
 
         const uploadToolbarButton = document.getElementById("uploadVideoBtn") as HTMLButtonElement | null;
         uploadToolbarButton?.addEventListener("click", async () => {
-            if (!this.user.currentUser) {
+            if (!this.user.currentUser && !config.isLocal) {
                 this.user.promptLogin("Please sign in to upload videos");
                 return;
             }
@@ -592,7 +592,7 @@ class Players {
     private updateUploadButtonState() {
         const uploadToolbarButton = document.getElementById("uploadVideoBtn") as HTMLButtonElement | null;
         if (!uploadToolbarButton) return;
-        const isLoggedIn = !!this.user?.currentUser;
+        const isLoggedIn = !!this.user?.currentUser || config.isLocal;
         uploadToolbarButton.classList.toggle("is-disabled", !isLoggedIn);
         uploadToolbarButton.title = isLoggedIn ? "Upload Video" : "Sign in to upload videos";
     }
