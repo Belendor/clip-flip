@@ -13,6 +13,9 @@ export interface AuthUser {
     picture?: string;
     isAdmin?: boolean;
     likesCount?: number;
+    uploadsCount?: number;
+    approvedUploads?: number;
+    pendingUploads?: number;
     createdAt?: string;
 }
 

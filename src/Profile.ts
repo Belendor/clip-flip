@@ -9,6 +9,9 @@ export interface AdminUserRecord {
     createdAt: string;
     updatedAt?: string;
     likesCount: number;
+    uploadsCount: number;
+    approvedUploads?: number;
+    pendingUploads?: number;
     isAdmin?: boolean;
 }
 
@@ -16,6 +19,8 @@ export interface AdminStatsData {
     totalUsers: number;
     totalLikes: number;
     totalVideos: number;
+    totalUploads: number;
+    pendingUploads: number;
     users: AdminUserRecord[];
 }
 
@@ -206,6 +211,15 @@ export default class Profile {
                                     </svg>
                                     <strong>${currentUser.likesCount ?? 0}</strong> liked clips
                                 </span>
+                                <span class="profile-meta-divider">•</span>
+                                <span class="profile-meta-item">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 mr-1 text-cyan-400">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <polyline points="17 8 12 3 7 8" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <line x1="12" y1="3" x2="12" y2="15" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    <strong>${currentUser.uploadsCount ?? 0}</strong> uploaded clips
+                                </span>
                                 ${currentUser.createdAt
                                     ? `<span class="profile-meta-divider">•</span>
                                        <span class="profile-meta-item text-gray-400">
@@ -256,6 +270,10 @@ export default class Profile {
                     <div class="profile-stat-card">
                         <div class="profile-stat-num text-pink-400">${user.likesCount ?? 0}</div>
                         <div class="profile-stat-label">Liked Clips</div>
+                    </div>
+                    <div class="profile-stat-card">
+                        <div class="profile-stat-num text-cyan-400">${user.uploadsCount ?? 0}</div>
+                        <div class="profile-stat-label">Uploaded Clips</div>
                     </div>
                 </div>
                 <div class="mt-4">
@@ -325,6 +343,15 @@ export default class Profile {
                         <div class="admin-kpi-val text-emerald-400">${stats.totalVideos.toLocaleString()}</div>
                         <div class="admin-kpi-sub">In database library</div>
                     </div>
+
+                    <div class="admin-kpi-card">
+                        <div class="admin-kpi-header">
+                            <span class="admin-kpi-label">User Uploads</span>
+                            <span class="admin-kpi-icon text-cyan-400">📤</span>
+                        </div>
+                        <div class="admin-kpi-val text-cyan-400">${stats.totalUploads.toLocaleString()}</div>
+                        <div class="admin-kpi-sub">${stats.pendingUploads} pending review</div>
+                    </div>
                 </div>
             </div>
 
@@ -333,7 +360,7 @@ export default class Profile {
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                     <div>
                         <h3 class="profile-section-title mb-0.5">Registered Users (${stats.users.length})</h3>
-                        <p class="text-xs text-gray-400">Users ranked by total likes given</p>
+                        <p class="text-xs text-gray-400">Users ranked by total likes and clips added</p>
                     </div>
                     <div class="admin-search-wrapper">
                         <input
@@ -353,7 +380,8 @@ export default class Profile {
                                 <th class="text-left">#</th>
                                 <th class="text-left">User</th>
                                 <th class="text-left">Email</th>
-                                <th class="text-right">Likes Count</th>
+                                <th class="text-right">Likes</th>
+                                <th class="text-right">Uploads</th>
                                 <th class="text-right">Registered</th>
                             </tr>
                         </thead>
@@ -387,7 +415,7 @@ export default class Profile {
         if (!users || users.length === 0) {
             return `
                 <tr>
-                    <td colspan="5" class="text-center py-6 text-gray-400 text-sm">
+                    <td colspan="6" class="text-center py-6 text-gray-400 text-sm">
                         No registered users found
                     </td>
                 </tr>
@@ -435,6 +463,16 @@ export default class Profile {
                                     <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                                 </svg>
                                 <strong>${u.likesCount.toLocaleString()}</strong>
+                            </span>
+                        </td>
+                        <td class="text-right">
+                            <span class="admin-upload-pill ${u.uploadsCount > 0 ? "has-uploads" : "zero-uploads"}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3 h-3 mr-1 inline">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <polyline points="17 8 12 3 7 8" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <line x1="12" y1="3" x2="12" y2="15" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <strong>${u.uploadsCount.toLocaleString()}</strong>
                             </span>
                         </td>
                         <td class="text-right text-gray-400 text-xs">

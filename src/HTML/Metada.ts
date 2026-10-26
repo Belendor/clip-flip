@@ -202,12 +202,25 @@ export default class Metadata {
         uploadTagSelect.className = "block w-full mb-2 border border-gray-400 px-2 py-1 rounded";
         if (section === 1) { this.uploadTagSelect = uploadTagSelect; }
 
+        const qualityNotice = document.createElement("div");
+        qualityNotice.className = "text-[11px] text-amber-300/90 mb-3 p-2 bg-black/40 rounded border border-amber-500/20";
+        qualityNotice.innerHTML = `⚠️ <strong>Quality rules:</strong> Clips must be <strong>2s–5s</strong> and max <strong>5 MB</strong>.`;
+
         const submitUploadBtn = document.createElement("button");
         submitUploadBtn.type = "button";
         submitUploadBtn.textContent = "Upload";
         submitUploadBtn.className = "upload-submit-btn";
         submitUploadBtn.addEventListener("click", async () => {
             if (!fileInput.files?.length) { alert("Please select a file."); return; }
+
+            // Validate file sizes client-side (<= 5MB)
+            for (const f of Array.from(fileInput.files)) {
+                if (f.size > 5 * 1024 * 1024) {
+                    alert(`File "${f.name}" exceeds the 5MB size limit (${(f.size / (1024 * 1024)).toFixed(2)}MB). Clips must be under 5MB.`);
+                    return;
+                }
+            }
+
             submitUploadBtn.disabled = true;
             const originalText = submitUploadBtn.textContent;
             submitUploadBtn.textContent = "Processing & Uploading to Prod...";
@@ -215,6 +228,12 @@ export default class Metadata {
             Array.from(fileInput.files).forEach((file) => formData.append("files", file));
             formData.append("title", uploadTitleInput.value.trim());
             formData.append("tagId", uploadTagSelect.value);
+
+            const uId = this.user?.getId();
+            if (uId) {
+                formData.append("userId", String(uId));
+            }
+
             try {
                 await this.api.uploadVideo(formData);
                 alert("Upload successful! Video processed and uploaded to production.");
@@ -223,14 +242,14 @@ export default class Metadata {
                 this.setUploadFormVisibility(false);
             } catch (error) {
                 console.error("Upload failed", error);
-                alert("Upload failed. Please check the local server terminal for details.");
+                alert(error instanceof Error ? error.message : "Upload failed. Please check that clips are between 2s-5s and max 5MB.");
             } finally {
                 submitUploadBtn.disabled = false;
                 submitUploadBtn.textContent = originalText;
             }
         });
 
-        uploadFormWrapper.append(uploadDragHandle, closeUploadBtn, fileInput, uploadTitleInput, uploadTagSelect, submitUploadBtn);
+        uploadFormWrapper.append(uploadDragHandle, closeUploadBtn, fileInput, uploadTitleInput, uploadTagSelect, qualityNotice, submitUploadBtn);
         this.uploadFormWrapper = uploadFormWrapper;
         if (section === 1) { this.html.appRoot.appendChild(this.uploadFormWrapper); }
     }

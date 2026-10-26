@@ -14,6 +14,9 @@ model Video {
   seriesTotal Int?
   studio      String?
 
+  userId      Int?
+  user        User?   @relation("UserUploadedVideos", fields: [userId], references: [id], onDelete: SetNull)
+
   reactions   VideoReaction[]
   models      Model[] @relation("VideoModels")
   tags        Tag[]   @relation("VideoTags")
@@ -28,6 +31,9 @@ model NewVideo {
 
   startTime   Float
   endTime     Float
+
+  userId      Int?
+  user        User?   @relation("UserUploadedNewVideos", fields: [userId], references: [id], onDelete: SetNull)
 
   models      Model[] @relation("NewVideoModels")
   tags        Tag[]   @relation("NewVideoTags")
@@ -68,6 +74,8 @@ model User {
   picture   String?
 
   reactions VideoReaction[]
+  uploadedVideos    Video[]    @relation("UserUploadedVideos")
+  uploadedNewVideos NewVideo[] @relation("UserUploadedNewVideos")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

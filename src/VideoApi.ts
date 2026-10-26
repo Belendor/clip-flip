@@ -111,9 +111,15 @@ export default class VideoApi {
         const response = await fetch(`${config.apiUrl}/upload-video`, {
             method: "POST",
             body: formData,
+            credentials: "include",
         });
         if (!response.ok) {
-            throw new Error(`Upload failed (${response.status})`);
+            let msg = `Upload failed (${response.status})`;
+            try {
+                const data = await response.json();
+                if (data.error) msg = data.error;
+            } catch (_) {}
+            throw new Error(msg);
         }
     }
 
@@ -132,6 +138,8 @@ export default class VideoApi {
         totalUsers: number;
         totalLikes: number;
         totalVideos: number;
+        totalUploads: number;
+        pendingUploads: number;
         users: Array<{
             id: number;
             email: string;
@@ -140,6 +148,9 @@ export default class VideoApi {
             createdAt: string;
             updatedAt?: string;
             likesCount: number;
+            uploadsCount: number;
+            approvedUploads?: number;
+            pendingUploads?: number;
             isAdmin?: boolean;
         }>;
     }> {

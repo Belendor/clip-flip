@@ -1425,6 +1425,27 @@ body {
     color: rgba(255, 255, 255, 0.4);
 }
 
+.admin-upload-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.admin-upload-pill.has-uploads {
+    background: rgba(6, 182, 212, 0.15);
+    border: 1px solid rgba(6, 182, 212, 0.4);
+    color: #38bdf8;
+}
+
+.admin-upload-pill.zero-uploads {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.4);
+}
+
 .profile-action-btn {
     display: inline-flex;
     align-items: center;

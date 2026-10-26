@@ -83,13 +83,19 @@ function moveFileCrossDevice(src: string, dest: string) {
 }
 
 function getVideoDuration(filePath: string): number {
-  const output = execFileSync("ffprobe", [
-    "-v", "error",
-    "-show_entries", "format=duration",
-    "-of", "default=noprint_wrappers=1:nokey=1",
-    filePath,
-  ]).toString();
-  return parseFloat(output);
+  try {
+    const output = execFileSync("ffprobe", [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      filePath,
+    ]).toString().trim();
+    const val = parseFloat(output);
+    return isNaN(val) ? 0 : val;
+  } catch (err) {
+    console.error("ffprobe error on file:", filePath, err);
+    return 0;
+  }
 }
 
 // ============================================================================
@@ -719,37 +725,130 @@ app.post(
       return res.status(400).json({ error: "No files uploaded" });
     }
 
+    const cleanupFiles = (paths: string[]) => {
+      for (const p of paths) {
+        try {
+          if (fsSync.existsSync(p)) fsSync.unlinkSync(p);
+        } catch (_) {}
+      }
+    };
+
     try {
-      const segmentLength = 4;
-      const processedSegments: SegmentItem[] = [];
-      const { tagId, title } = req.body;
+      const { tagId, title, userId: bodyUserId } = req.body;
+      const uploaderId =
+        req.cookies?.userId && !isNaN(Number(req.cookies.userId))
+          ? Number(req.cookies.userId)
+          : bodyUserId && !isNaN(Number(bodyUserId))
+            ? Number(bodyUserId)
+            : null;
+
+      const isProduction =
+        process.env.NODE_ENV === "production" ||
+        fsSync.existsSync("/var/www/clipflip") ||
+        Boolean(req.headers.host && (req.headers.host.includes("clip-flip.com") || req.headers.host.includes("56.228.95.201")));
 
       if (!fsSync.existsSync(tempBaseDir)) fsSync.mkdirSync(tempBaseDir, { recursive: true });
       if (!fsSync.existsSync(tempThumbDir)) fsSync.mkdirSync(tempThumbDir, { recursive: true });
+      if (!fsSync.existsSync(outputDir)) fsSync.mkdirSync(outputDir, { recursive: true });
+      if (!fsSync.existsSync(outputDirThumbnails)) fsSync.mkdirSync(outputDirThumbnails, { recursive: true });
+
+      // Strict validation for production uploads: must be clips between 2s-5s and <= 5MB
+      if (isProduction) {
+        for (const file of files) {
+          if (file.size > 5 * 1024 * 1024) {
+            cleanupFiles(files.map((f) => f.path));
+            return res.status(400).json({
+              error: `Quality check failed: Video "${file.originalname}" exceeds 5MB size limit (${(file.size / (1024 * 1024)).toFixed(2)}MB). Production uploads must be clips <= 5MB.`,
+            });
+          }
+
+          const duration = getVideoDuration(file.path);
+          if (duration < 1.95 || duration > 5.05) {
+            cleanupFiles(files.map((f) => f.path));
+            return res.status(400).json({
+              error: `Quality check failed: Clip "${file.originalname}" duration must be between 2s and 5s (got ${duration.toFixed(2)}s).`,
+            });
+          }
+        }
+
+        // On production: process clips directly without heavy slicing
+        const createdOnProd = [];
+        for (const file of files) {
+          const duration = getVideoDuration(file.path);
+          const mid = (duration / 2).toFixed(2);
+          const tempKey = crypto.randomUUID();
+          const firstOut = path.join(tempThumbDir, `${tempKey}_first.jpg`);
+          const middleOut = path.join(tempThumbDir, `${tempKey}_middle.jpg`);
+
+          execFileSync(
+            "ffmpeg",
+            ["-y", "-ss", "0", "-i", file.path, "-strict", "unofficial", "-frames:v", "1", firstOut],
+            { stdio: "pipe" }
+          );
+
+          execFileSync(
+            "ffmpeg",
+            ["-y", "-ss", String(mid), "-i", file.path, "-strict", "unofficial", "-frames:v", "1", middleOut],
+            { stdio: "pipe" }
+          );
+
+          const videoTitle = title && String(title).trim() ? `${String(title).trim()},${file.originalname}` : file.originalname;
+
+          const newVideo = await prisma.newVideo.create({
+            data: {
+              title: videoTitle,
+              startTime: 0,
+              endTime: duration,
+              userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
+              tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
+            },
+            include: { tags: true },
+          });
+
+          const segmentId = newVideo.id;
+          const destVideo = path.join(outputDir, `${segmentId}.mp4`);
+          const destFirstThumb = path.join(outputDirThumbnails, `${segmentId}_first.jpg`);
+          const destMidThumb = path.join(outputDirThumbnails, `${segmentId}_middle.jpg`);
+
+          moveFileCrossDevice(file.path, destVideo);
+          if (fsSync.existsSync(firstOut)) moveFileCrossDevice(firstOut, destFirstThumb);
+          if (fsSync.existsSync(middleOut)) moveFileCrossDevice(middleOut, destMidThumb);
+
+          createdOnProd.push(newVideo);
+        }
+
+        return res.json({
+          success: true,
+          message: "Clips verified and uploaded to production successfully",
+          videos: createdOnProd,
+        });
+      }
+
+      // Local instance upload: slices video into 4s segments and sends batches to prod
+      const segmentLength = 4;
+      const processedSegments: SegmentItem[] = [];
 
       for (const file of files) {
         const duration = getVideoDuration(file.path);
 
-        for (let start = 0; start + segmentLength <= duration; start += segmentLength) {
-          const end = start + segmentLength;
-          const mid = ((start + end) / 2).toFixed(2);
-
+        // If file itself is already a short clip (2s to 5s)
+        if (duration <= 5.05 && duration >= 1.95) {
           const tempKey = crypto.randomUUID();
           const tempVideoName = `${tempKey}.mp4`;
           const tempFirstThumbName = `${tempKey}_first.jpg`;
           const tempMiddleThumbName = `${tempKey}_middle.jpg`;
-
           const videoOut = path.join(tempBaseDir, tempVideoName);
           const firstOut = path.join(tempThumbDir, tempFirstThumbName);
           const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
+          const mid = (duration / 2).toFixed(2);
 
           execFileSync(
             "ffmpeg",
             [
               "-y",
-              "-ss", String(start),
+              "-ss", "0",
               "-i", file.path,
-              "-t", String(segmentLength),
+              "-t", String(duration),
               "-c:v", "libx264",
               "-preset", "medium",
               "-crf", "22",
@@ -763,47 +862,96 @@ app.post(
             { stdio: "pipe" }
           );
 
-          execFileSync(
-            "ffmpeg",
-            [
-              "-y",
-              "-ss", String(start),
-              "-i", file.path,
-              "-strict", "unofficial",
-              "-frames:v", "1",
-              firstOut,
-            ],
-            { stdio: "pipe" }
-          );
-
-          execFileSync(
-            "ffmpeg",
-            [
-              "-y",
-              "-ss", String(mid),
-              "-i", file.path,
-              "-strict", "unofficial",
-              "-frames:v", "1",
-              middleOut,
-            ],
-            { stdio: "pipe" }
-          );
-
-          if (!fsSync.existsSync(videoOut)) {
-            throw new Error(`FFmpeg ran but segment file was not created: ${videoOut}`);
-          }
+          execFileSync("ffmpeg", ["-y", "-ss", "0", "-i", file.path, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
+          execFileSync("ffmpeg", ["-y", "-ss", String(mid), "-i", file.path, "-strict", "unofficial", "-frames:v", "1", middleOut], { stdio: "pipe" });
 
           const videoTitle = title && String(title).trim() ? `${String(title).trim()},${file.originalname}` : file.originalname;
-
           processedSegments.push({
             tempKey,
             tempVideoName,
             tempFirstThumbName,
             tempMiddleThumbName,
             title: videoTitle,
-            startTime: start,
-            endTime: end,
+            startTime: 0,
+            endTime: duration,
           });
+        } else {
+          // Slice longer videos into segments
+          for (let start = 0; start + segmentLength <= duration; start += segmentLength) {
+            const end = start + segmentLength;
+            const mid = ((start + end) / 2).toFixed(2);
+
+            const tempKey = crypto.randomUUID();
+            const tempVideoName = `${tempKey}.mp4`;
+            const tempFirstThumbName = `${tempKey}_first.jpg`;
+            const tempMiddleThumbName = `${tempKey}_middle.jpg`;
+
+            const videoOut = path.join(tempBaseDir, tempVideoName);
+            const firstOut = path.join(tempThumbDir, tempFirstThumbName);
+            const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
+
+            execFileSync(
+              "ffmpeg",
+              [
+                "-y",
+                "-ss", String(start),
+                "-i", file.path,
+                "-t", String(segmentLength),
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "22",
+                "-maxrate", "6M",
+                "-bufsize", "12M",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-vf", "scale=min(1920\\,iw):-2",
+                videoOut,
+              ],
+              { stdio: "pipe" }
+            );
+
+            execFileSync(
+              "ffmpeg",
+              [
+                "-y",
+                "-ss", String(start),
+                "-i", file.path,
+                "-strict", "unofficial",
+                "-frames:v", "1",
+                firstOut,
+              ],
+              { stdio: "pipe" }
+            );
+
+            execFileSync(
+              "ffmpeg",
+              [
+                "-y",
+                "-ss", String(mid),
+                "-i", file.path,
+                "-strict", "unofficial",
+                "-frames:v", "1",
+                middleOut,
+              ],
+              { stdio: "pipe" }
+            );
+
+            if (!fsSync.existsSync(videoOut)) {
+              throw new Error(`FFmpeg ran but segment file was not created: ${videoOut}`);
+            }
+
+            const videoTitle = title && String(title).trim() ? `${String(title).trim()},${file.originalname}` : file.originalname;
+
+            processedSegments.push({
+              tempKey,
+              tempVideoName,
+              tempFirstThumbName,
+              tempMiddleThumbName,
+              title: videoTitle,
+              startTime: start,
+              endTime: end,
+            });
+          }
         }
 
         if (fsSync.existsSync(file.path)) {
@@ -818,7 +966,7 @@ app.post(
         const batch = processedSegments.slice(i, i + BATCH_SIZE);
         const formData = new FormData();
 
-        formData.append("metadata", JSON.stringify({ segments: batch, tagId }));
+        formData.append("metadata", JSON.stringify({ segments: batch, tagId, userId: uploaderId }));
 
         for (const seg of batch) {
           const videoPath = path.join(tempBaseDir, seg.tempVideoName);
@@ -891,12 +1039,47 @@ app.post(
       const uploadedVideos = files["videos"] || [];
       const uploadedThumbs = files["thumbs"] || [];
 
-      const { segments, tagId } = JSON.parse(req.body.metadata) as {
-        segments: SegmentItem[];
-        tagId?: number | string;
+      const cleanupAll = () => {
+        for (const f of [...uploadedVideos, ...uploadedThumbs]) {
+          try {
+            if (fsSync.existsSync(f.path)) fsSync.unlinkSync(f.path);
+          } catch (_) {}
+        }
       };
 
+      // Strict validation for segment uploads: <= 5MB and between 2s and 5s duration
+      for (const videoFile of uploadedVideos) {
+        if (videoFile.size > 5 * 1024 * 1024) {
+          cleanupAll();
+          return res.status(400).json({
+            error: `Quality check failed: Clip "${videoFile.originalname}" exceeds 5MB size limit (${(videoFile.size / (1024 * 1024)).toFixed(2)}MB).`,
+          });
+        }
+
+        const duration = getVideoDuration(videoFile.path);
+        if (duration < 1.95 || duration > 5.05) {
+          cleanupAll();
+          return res.status(400).json({
+            error: `Quality check failed: Clip "${videoFile.originalname}" duration must be between 2s and 5s (got ${duration.toFixed(2)}s).`,
+          });
+        }
+      }
+
+      const { segments, tagId, userId: metaUserId } = JSON.parse(req.body.metadata) as {
+        segments: SegmentItem[];
+        tagId?: number | string;
+        userId?: number | string;
+      };
+
+      const uploaderId =
+        req.cookies?.userId && !isNaN(Number(req.cookies.userId))
+          ? Number(req.cookies.userId)
+          : metaUserId && !isNaN(Number(metaUserId))
+            ? Number(metaUserId)
+            : null;
+
       if (!segments || segments.length === 0) {
+        cleanupAll();
         return res.status(400).json({ error: "No segment metadata provided" });
       }
 
@@ -920,6 +1103,7 @@ app.post(
               title: seg.title,
               startTime: seg.startTime,
               endTime: seg.endTime,
+              userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
               tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
             },
             include: { tags: true },
@@ -1050,6 +1234,7 @@ app.post("/video/:id/approve", async (req: Request, res: Response) => {
       const video = await tx.video.create({
         data: {
           title: newVideo.title,
+          userId: newVideo.userId,
           tags: {
             connect: newVideo.tags.map((tag) => ({ id: tag.id })),
           },
@@ -1255,9 +1440,19 @@ app.get("/auth/me", async (req, res) => {
   }
 
   const isAdmin = ADMIN_EMAILS.includes((user.email || "").toLowerCase());
-  const likesCount = await prisma.videoReaction.count({
-    where: { userId: user.id, type: "like" },
-  });
+  const [likesCount, approvedUploads, pendingUploads] = await Promise.all([
+    prisma.videoReaction.count({
+      where: { userId: user.id, type: "like" },
+    }),
+    prisma.video.count({
+      where: { userId: user.id },
+    }),
+    prisma.newVideo.count({
+      where: { userId: user.id },
+    }),
+  ]);
+
+  const uploadsCount = approvedUploads + pendingUploads;
 
   res.json({
     loggedIn: true,
@@ -1265,6 +1460,9 @@ app.get("/auth/me", async (req, res) => {
       ...user,
       isAdmin,
       likesCount,
+      uploadsCount,
+      approvedUploads,
+      pendingUploads,
     },
   });
 });
@@ -1284,10 +1482,12 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Forbidden: Admin access required" });
     }
 
-    const [totalUsers, totalLikes, totalVideos, usersList] = await Promise.all([
+    const [totalUsers, totalLikes, totalVideos, totalUploads, pendingUploads, usersList] = await Promise.all([
       prisma.user.count(),
       prisma.videoReaction.count({ where: { type: "like" } }),
       prisma.video.count(),
+      prisma.video.count({ where: { userId: { not: null } } }),
+      prisma.newVideo.count(),
       prisma.user.findMany({
         select: {
           id: true,
@@ -1300,21 +1500,34 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
             where: { type: "like" },
             select: { videoId: true },
           },
+          uploadedVideos: {
+            select: { id: true },
+          },
+          uploadedNewVideos: {
+            select: { id: true },
+          },
         },
         orderBy: { createdAt: "desc" },
       }),
     ]);
 
-    const users = usersList.map((u) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      picture: u.picture,
-      createdAt: u.createdAt,
-      updatedAt: u.updatedAt,
-      likesCount: u.reactions.length,
-      isAdmin: ADMIN_EMAILS.includes((u.email || "").toLowerCase()),
-    }));
+    const users = usersList.map((u) => {
+      const approvedCount = u.uploadedVideos.length;
+      const pendingCount = u.uploadedNewVideos.length;
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        picture: u.picture,
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
+        likesCount: u.reactions.length,
+        uploadsCount: approvedCount + pendingCount,
+        approvedUploads: approvedCount,
+        pendingUploads: pendingCount,
+        isAdmin: ADMIN_EMAILS.includes((u.email || "").toLowerCase()),
+      };
+    });
 
     users.sort((a, b) => b.likesCount - a.likesCount);
 
@@ -1324,6 +1537,11 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
         totalUsers,
         totalLikes,
         totalVideos,
+        totalUploads,
+        pendingUploads,
+        users,
+      },
+    });
         users,
       },
     });
