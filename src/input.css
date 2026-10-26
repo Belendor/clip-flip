@@ -562,9 +562,7 @@ body {
 
 /* ── Visibility ──────────────────────────────────────────── */
 .hidden {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    visibility: hidden !important; 
+    display: none !important;
 }
 
 /* ── Metadata UI ─────────────────────────────────────────── */
@@ -1158,6 +1156,11 @@ body {
     width: auto;
     max-width: min(92vw, 760px);
     gap: 8px;
+    pointer-events: none;
+}
+
+.ui-wrapper > * {
+    pointer-events: auto;
 }
 
 .toolbar {
@@ -1453,6 +1456,10 @@ body {
     box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
     padding: 10px 12px;
     color: #ffffff;
+}
+
+.metadata-form.hidden {
+    display: none !important;
 }
 
 .metadata-form::-webkit-scrollbar {
@@ -1767,6 +1774,10 @@ body {
     align-items: start;
     justify-items: stretch;
     align-content: start;
+}
+
+.advanced-panel.hidden {
+    display: none !important;
 }
 
 @media (max-height: 500px) {

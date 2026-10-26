@@ -123,7 +123,7 @@
         }
 
         .metadata-form {
-            z-index: 70;
+            z-index: 40;
             position: absolute;
             left: 14px;
             bottom: max(96px, env(safe-area-inset-bottom, 0px) + 80px);
@@ -142,6 +142,10 @@
             box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
             padding: 10px 12px;
             color: #ffffff;
+        }
+
+        .metadata-form.hidden {
+            display: none !important;
         }
 
         .metadata-form::-webkit-scrollbar {
@@ -710,7 +714,7 @@
         }
 
         .ui-wrapper {
-            z-index: 3;
+            z-index: 1000;
             position: fixed;
             left: 50%;
             transform: translateX(-50%);
@@ -719,8 +723,17 @@
             flex-direction: column;
             align-items: center;
             width: auto;
-            max-width: min(88vw, 640px);
+            max-width: min(92vw, 760px);
             gap: 8px;
+            pointer-events: none;
+        }
+
+        .ui-wrapper > * {
+            pointer-events: auto;
+        }
+
+        .advanced-panel.hidden {
+            display: none !important;
         }
 
         .toolbar {
