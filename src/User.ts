@@ -11,11 +11,15 @@ export interface AuthUser {
     email: string;
     name?: string;
     picture?: string;
+    isAdmin?: boolean;
+    likesCount?: number;
+    createdAt?: string;
 }
 
 export default class User {
     currentUser: AuthUser | null = null;
     onAuthChange: ((user: AuthUser | null) => void) | null = null;
+    onNavigateProfile: (() => void) | null = null;
     private scriptLoadPromise: Promise<void> | null = null;
 
     constructor() {
@@ -267,7 +271,26 @@ export default class User {
         const linksList = document.createElement("div");
         linksList.className = "user-dropdown-links";
 
-        // First link: Log Out
+        // First link: My Profile
+        const profileBtn = document.createElement("button");
+        profileBtn.type = "button";
+        profileBtn.className = "user-dropdown-item";
+        profileBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="dropdown-icon">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="flex-1 text-left">My Profile</span>
+            ${this.currentUser.isAdmin ? '<span class="admin-badge-micro">ADMIN</span>' : ''}
+        `;
+        profileBtn.onclick = (e) => {
+            e.stopPropagation();
+            dropdown.classList.add("hidden");
+            chevron.classList.remove("is-open");
+            this.onNavigateProfile?.();
+        };
+
+        // Second link: Log Out
         const logoutBtn = document.createElement("button");
         logoutBtn.type = "button";
         logoutBtn.className = "user-dropdown-item dropdown-item-danger";
@@ -286,6 +309,7 @@ export default class User {
             void this.logout();
         };
 
+        linksList.appendChild(profileBtn);
         linksList.appendChild(logoutBtn);
 
         dropdown.appendChild(header);

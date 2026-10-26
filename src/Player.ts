@@ -1221,7 +1221,7 @@ class Players {
         }
     }
 
-    private async switchMode(mode: "random" | "trending" | "liked" | "new" | "favorite") {
+    public async switchMode(mode: "random" | "trending" | "liked" | "new" | "favorite") {
         const normalizedMode = mode === "favorite" ? "liked" : mode;
         if (this.state.state === normalizedMode || this.isSwitchingMode) return;
         this.isSwitchingMode = true;

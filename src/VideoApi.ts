@@ -127,4 +127,29 @@ export default class VideoApi {
         if (!res.ok) throw new Error("Reaction failed");
         return res.json();
     }
+
+    async getAdminStats(): Promise<{
+        totalUsers: number;
+        totalLikes: number;
+        totalVideos: number;
+        users: Array<{
+            id: number;
+            email: string;
+            name: string | null;
+            picture: string | null;
+            createdAt: string;
+            updatedAt?: string;
+            likesCount: number;
+            isAdmin?: boolean;
+        }>;
+    }> {
+        const res = await fetch(`${config.apiUrl}/admin/stats`, {
+            credentials: "include",
+        });
+        if (!res.ok) {
+            throw new Error(`Failed to load admin stats (${res.status})`);
+        }
+        const data = await res.json();
+        return data.stats;
+    }
 }

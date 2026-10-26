@@ -1237,6 +1237,8 @@ app.post("/auth/google", async (req: Request, res: Response) => {
   }
 });
 
+const ADMIN_EMAILS = ["belendorrr@gmail.com"];
+
 app.get("/auth/me", async (req, res) => {
   const userId = Number(req.cookies.userId);
 
@@ -1248,10 +1250,87 @@ app.get("/auth/me", async (req, res) => {
     where: { id: userId },
   });
 
-  res.json({
-    loggedIn: !!user,
-    user,
+  if (!user) {
+    return res.json({ loggedIn: false, user: null });
+  }
+
+  const isAdmin = ADMIN_EMAILS.includes((user.email || "").toLowerCase());
+  const likesCount = await prisma.videoReaction.count({
+    where: { userId: user.id, type: "like" },
   });
+
+  res.json({
+    loggedIn: true,
+    user: {
+      ...user,
+      isAdmin,
+      likesCount,
+    },
+  });
+});
+
+app.get("/admin/stats", async (req: Request, res: Response) => {
+  try {
+    const userId = Number(req.cookies.userId);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !ADMIN_EMAILS.includes((user.email || "").toLowerCase())) {
+      return res.status(403).json({ error: "Forbidden: Admin access required" });
+    }
+
+    const [totalUsers, totalLikes, totalVideos, usersList] = await Promise.all([
+      prisma.user.count(),
+      prisma.videoReaction.count({ where: { type: "like" } }),
+      prisma.video.count(),
+      prisma.user.findMany({
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          picture: true,
+          createdAt: true,
+          updatedAt: true,
+          reactions: {
+            where: { type: "like" },
+            select: { videoId: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    const users = usersList.map((u) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      picture: u.picture,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+      likesCount: u.reactions.length,
+      isAdmin: ADMIN_EMAILS.includes((u.email || "").toLowerCase()),
+    }));
+
+    users.sort((a, b) => b.likesCount - a.likesCount);
+
+    return res.json({
+      success: true,
+      stats: {
+        totalUsers,
+        totalLikes,
+        totalVideos,
+        users,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching admin stats:", error);
+    return res.status(500).json({ error: "Failed to fetch admin statistics" });
+  }
 });
 
 app.get("/videos/favorites/:userId", async (req: Request, res: Response) => {
