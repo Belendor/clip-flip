@@ -154,30 +154,30 @@ body {
 
 .tag-card {
     position: relative;
-    aspect-ratio: 4 / 2;
+    aspect-ratio: 16 / 9;
     width: 100%;
-    max-height: 78px;
-    min-height: 62px;
+    max-height: 140px;
+    min-height: 90px;
     background-size: cover;
     background-position: center;
     border-radius: 14px;
     cursor: pointer;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
 .tag-card:hover {
     transform: translateY(-2px);
-    border-color: rgba(143, 211, 255, 0.38);
-    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+    border-color: rgba(143, 211, 255, 0.45);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
 }
 
 .tag-card::after {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.12));
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.18));
 }
 
 .tag-card-title {
@@ -188,10 +188,11 @@ body {
     z-index: 3;
     color: white;
     font-weight: 700;
-    font-size: 0.8rem;
+    font-size: 0.95rem;
     letter-spacing: 0.01em;
     text-align: center;
     width: calc(100% - 18px);
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
 }
 
 .tag-button {
@@ -1146,7 +1147,7 @@ body {
 
 /* ── UI Floating Wrapper & Toolbar ───────────────────────── */
 .ui-wrapper {
-    z-index: 80;
+    z-index: 100;
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
@@ -1155,7 +1156,7 @@ body {
     flex-direction: column;
     align-items: center;
     width: auto;
-    max-width: min(88vw, 640px);
+    max-width: min(92vw, 760px);
     gap: 8px;
 }
 
@@ -1218,6 +1219,17 @@ body {
     box-shadow: 0 8px 20px rgba(87, 166, 255, 0.16);
 }
 
+#uploadVideoBtn.is-disabled {
+    opacity: 0.38;
+    filter: grayscale(60%);
+    cursor: pointer;
+}
+
+#uploadVideoBtn.is-disabled:hover {
+    opacity: 0.7;
+    filter: grayscale(20%);
+}
+
 /* Metadata Toggle Button (Hide / Show) */
 #hideForms:not(.is-closed) {
     opacity: 0.45;
@@ -1233,18 +1245,20 @@ body {
     background: rgba(255, 255, 255, 0.08);
 }
 
-/* When closed, metadata button burns vibrant green as the most important button to know */
+/* When closed, metadata button is highlighted static half lighter with no animation */
 #hideForms.is-closed {
-    background: rgba(16, 185, 129, 0.28) !important;
-    border-color: #34d399 !important;
-    color: #ffffff !important;
-    animation: burning-green 2s infinite ease-in-out;
+    background: rgba(16, 185, 129, 0.16) !important;
+    border-color: rgba(52, 211, 153, 0.55) !important;
+    color: #a7f3d0 !important;
+    box-shadow: 0 0 10px rgba(52, 211, 153, 0.25) !important;
+    animation: none !important;
 }
 
 #hideForms.is-closed:hover {
-    background: rgba(16, 185, 129, 0.45) !important;
-    border-color: #6ee7b7 !important;
-    box-shadow: 0 0 24px rgba(52, 211, 153, 0.95), 0 0 40px rgba(16, 185, 129, 0.7) !important;
+    background: rgba(16, 185, 129, 0.26) !important;
+    border-color: #34d399 !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 16px rgba(52, 211, 153, 0.45) !important;
 }
 
 @keyframes burning-green {
@@ -1731,26 +1745,26 @@ body {
 }
 
 .advanced-panel {
-    z-index: 10;
+    z-index: 30;
     width: 100%;
-    max-width: min(720px, 88vw);
-    max-height: 80vh;
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
-    background: rgba(6, 8, 12, 0.08);
-    border: 0.5px solid rgba(255, 255, 255, 0.1);
+    max-width: min(760px, 92vw);
+    max-height: min(75vh, 600px);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    background: rgba(8, 11, 16, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 18px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 1px rgba(255, 255, 255, 0.2);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    column-gap: 6px;
-    row-gap: 6px;
-    margin-bottom: 4px;
-    padding: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 10px;
+    row-gap: 10px;
+    margin-bottom: 6px;
+    padding: 10px;
     box-sizing: border-box;
     overflow-y: auto;
     align-items: start;
-    justify-items: start;
+    justify-items: stretch;
     align-content: start;
 }
 

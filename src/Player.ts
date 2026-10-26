@@ -41,9 +41,11 @@ class Players {
 
     async init() {
         this.attachEventListeners();
+        this.updateUploadButtonState();
         this.attachMetadataTabListeners();
         this.user.onAuthChange = async (user) => {
-            if (!user && this.state.state === "new") {
+            this.updateUploadButtonState();
+            if (!user && (this.state.state === "new" || this.state.state === "liked")) {
                 await this.switchMode("trending");
                 return;
             }
@@ -52,6 +54,31 @@ class Players {
         };
 
         const hasCache = await this.state.cacheInitPromise;
+
+        if (this.state.state === "liked" && !this.user.currentUser) {
+            this.state.state = "trending";
+            try { localStorage.setItem("clipflip_mode", "trending"); } catch (_) {}
+            this.html.metadata.init();
+            this.attachMetadataTabListeners();
+        }
+
+        if (this.state.state === "trending") {
+            this.state.randomized = false;
+            if (!this.state.trendingVideos || this.state.trendingVideos.length === 0) {
+                await this.state.fetchTrendingVideos();
+            }
+        } else if (this.state.state === "liked") {
+            this.state.randomized = false;
+            if (!this.state.likedVideos || this.state.likedVideos.length === 0) {
+                await this.state.fetchLikedVideos();
+            }
+        } else if (this.state.state === "new") {
+            this.state.randomized = false;
+            if (!this.state.newVideos || this.state.newVideos.length === 0) {
+                await this.state.fetchNewVideos();
+            }
+        }
+
         if (hasCache) {
             await this.loadVideos(false);
             void Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
@@ -295,6 +322,10 @@ class Players {
                     if (!targetBtn) return;
                     const mode = targetBtn.dataset.mode as "random" | "trending" | "liked" | "new" | "favorite";
                     if (!mode) return;
+                    if (mode === "liked" && !this.user.currentUser) {
+                        this.user.promptLogin("Please sign in to view your liked videos");
+                        return;
+                    }
                     await this.switchMode(mode);
                 };
             });
@@ -361,7 +392,10 @@ class Players {
                 .map(Number)
                 .filter((index) => this.state.active[index as PlayerIndex]) as PlayerIndex[];
             if (activeIndexes.length === 0) return;
-            const anyPlaying = activeIndexes.some((index) => this.state.playing[index]);
+            const anyPlaying = activeIndexes.some((index) => {
+                const player = this.html.videoPlayers[index];
+                return player && !player.paused;
+            });
             this.updatePlayPauseIcon(!anyPlaying);
             await Promise.all(activeIndexes.map((index) => this.togglePlayPause(index, true)));
         });
@@ -433,6 +467,10 @@ class Players {
 
         const uploadToolbarButton = document.getElementById("uploadVideoBtn") as HTMLButtonElement | null;
         uploadToolbarButton?.addEventListener("click", async () => {
+            if (!this.user.currentUser) {
+                this.user.promptLogin("Please sign in to upload videos");
+                return;
+            }
             const shouldOpen = this.html.metadata.uploadFormWrapper?.classList.contains("hidden") ?? false;
             if (shouldOpen) await this.html.metadata.populateUploadTagSelect();
             this.html.metadata.setUploadFormVisibility(shouldOpen);
@@ -505,25 +543,52 @@ class Players {
         } catch (_) {}
     }
 
+    private updateUploadButtonState() {
+        const uploadToolbarButton = document.getElementById("uploadVideoBtn") as HTMLButtonElement | null;
+        if (!uploadToolbarButton) return;
+        const isLoggedIn = !!this.user?.currentUser;
+        uploadToolbarButton.classList.toggle("is-disabled", !isLoggedIn);
+        uploadToolbarButton.title = isLoggedIn ? "Upload Video" : "Sign in to upload videos";
+    }
+
     private attachSearchListeners() {
         const searchInput = document.getElementById("search-input") as HTMLInputElement | null;
         const advancedPanel = document.getElementById("advancedPanel") as HTMLElement | null;
         if (!searchInput || !advancedPanel) return;
 
-        searchInput.addEventListener("focus", () => {
+        const openSearchPanel = () => {
             advancedPanel.classList.remove("hidden");
-            this.renderTagResults(this.state.tags, advancedPanel, searchInput);
-        });
-
-        document.addEventListener("click", (e) => {
-            const target = e.target as HTMLElement;
-            if (!advancedPanel.contains(target) && target !== searchInput) {
-                advancedPanel.classList.add("hidden");
+            const val = searchInput.value.trim();
+            if (!val) {
+                this.renderTagResults(this.state.tags, advancedPanel, searchInput);
             }
-        });
+        };
+
+        searchInput.addEventListener("focus", openSearchPanel);
+        searchInput.addEventListener("click", openSearchPanel);
+
+        // Capture phase click listener: if clicking outside the tag thumbnail bar while open,
+        // close it and consume the event completely so it does not stop or skip video playback!
+        window.addEventListener(
+            "click",
+            (e) => {
+                if (advancedPanel.classList.contains("hidden")) return;
+                const target = e.target as HTMLElement | null;
+                if (!target) return;
+                if (!advancedPanel.contains(target) && target !== searchInput) {
+                    advancedPanel.classList.add("hidden");
+                    searchInput.blur();
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }
+            },
+            true
+        );
 
         searchInput.addEventListener("input", async (event) => {
             const value = (event.target as HTMLInputElement).value.trim();
+            advancedPanel.classList.remove("hidden");
             if (!value) {
                 this.renderTagResults(this.state.tags, advancedPanel, searchInput);
                 return;
@@ -544,6 +609,18 @@ class Players {
             player.addEventListener("ended", () => { this.handlePlayerEnded(index as PlayerIndex); });
             player.addEventListener("click", () => { this.togglePlayPause(index as PlayerIndex); });
             player.addEventListener("dblclick", () => { void this.toggleFullscreen(); });
+            player.addEventListener("play", () => {
+                this.state.playing[index as PlayerIndex] = true;
+                this.updatePlayPauseIcon(true);
+            });
+            player.addEventListener("pause", () => {
+                this.state.playing[index as PlayerIndex] = false;
+                const anyActivePlaying = Object.keys(this.state.active)
+                    .map(Number)
+                    .filter((i) => this.state.active[i as PlayerIndex])
+                    .some((i) => !this.html.videoPlayers[i].paused);
+                this.updatePlayPauseIcon(anyActivePlaying);
+            });
             player.addEventListener("error", () => {
                 const videoId = this.getPlayerVideoId(player);
                 console.warn(`Player ${index} (videoId ${videoId}) error:`, player.error);
@@ -558,13 +635,21 @@ class Players {
         advancedPanel.innerHTML = "";
         if (!tags || tags.length === 0) {
             const emptyNotice = document.createElement("div");
-            emptyNotice.className = "col-span-3 text-center py-4 text-sm text-gray-400";
+            emptyNotice.className = "col-span-2 text-center py-4 text-sm text-gray-400";
             emptyNotice.textContent = "No matching tags found";
             advancedPanel.appendChild(emptyNotice);
             return;
         }
 
-        tags.forEach((tag) => {
+        // Sort by how many videos have those tags (most videos first, then natural title)
+        const sortedTags = [...tags].sort((a, b) => {
+            const countA = a.videoCount ?? 0;
+            const countB = b.videoCount ?? 0;
+            if (countB !== countA) return countB - countA;
+            return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+        });
+
+        sortedTags.forEach((tag) => {
             const card = document.createElement("div");
             card.className = "tag-card";
             card.dataset.tag = tag.title;
@@ -720,7 +805,8 @@ class Players {
 
     private async togglePlayPause(index: PlayerIndex, multi = false): Promise<void> {
         const player = this.html.videoPlayers[index];
-        if (this.state.active[index] && this.state.playing[index]) {
+        if (!player) return;
+        if (!player.paused) {
             player.pause();
             this.state.playing[index] = false;
             if (!multi) this.updatePlayPauseIcon(false);

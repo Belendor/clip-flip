@@ -65,7 +65,14 @@ class State {
         this.cacheInitPromise = this.initCache();
 
         if (this.state === "new") {
+            this.randomized = false;
             this.fetchNewVideos();
+        } else if (this.state === "trending") {
+            this.randomized = false;
+            this.fetchTrendingVideos();
+        } else if (this.state === "liked" || this.state === "favorite") {
+            this.randomized = false;
+            this.fetchLikedVideos();
         } else {
             this.resetActiveTags();
         }
@@ -115,12 +122,16 @@ class State {
                 } catch (_) {}
 
                 let chosenId = 0;
-                if (lastId && !this.played.has(lastId)) {
-                    chosenId = lastId;
+                if (this.state === "trending" && this.trendingVideos.length > 0) {
+                    this.randomized = false;
+                    const inTrending = lastId && !this.played.has(lastId) && this.trendingVideos.some(v => v.id === lastId);
+                    chosenId = inTrending ? lastId : this.trendingVideos[0].id;
                 } else if ((this.state === "liked" || this.state === "favorite") && this.likedVideos.length > 0) {
-                    chosenId = this.likedVideos[0].id;
-                } else if (this.state === "trending" && this.trendingVideos.length > 0) {
-                    chosenId = this.trendingVideos[0].id;
+                    this.randomized = false;
+                    const inLiked = lastId && !this.played.has(lastId) && this.likedVideos.some(v => v.id === lastId);
+                    chosenId = inLiked ? lastId : this.likedVideos[0].id;
+                } else if (lastId && !this.played.has(lastId)) {
+                    chosenId = lastId;
                 } else if (unwatched.length > 0) {
                     chosenId = unwatched[Math.floor(Math.random() * unwatched.length)].id;
                 }
