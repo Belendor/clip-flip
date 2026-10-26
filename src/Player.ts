@@ -123,6 +123,22 @@ class Players {
         this.html.hideNoVideosBox();
         this.resetPlaybackSurface();
 
+        // When multisection is enabled, ensure sections 1-4 play distinct random videos at start
+        if (this.state.multiSection) {
+            const currentPos = [1, 2, 3, 4].map((s) => this.state.positions[s as SectionId]);
+            const hasDuplicateOrZero =
+                !currentPos[1] ||
+                !currentPos[2] ||
+                !currentPos[3] ||
+                currentPos[0] === currentPos[1] ||
+                currentPos[0] === currentPos[2] ||
+                currentPos[1] === currentPos[2];
+
+            if (hasDuplicateOrZero) {
+                this.initMultiSectionRandomVideos();
+            }
+        }
+
         const sections = this.getVisibleSections();
         const results = await Promise.all(sections.map(section => this.loadSection(section, revision)));
 
@@ -133,6 +149,31 @@ class Players {
             return;
         }
         this.hideLoader();
+    }
+
+    private initMultiSectionRandomVideos() {
+        let pool: number[] = [];
+        if (this.state.state === "new" && this.state.newVideos?.length) {
+            pool = this.state.newVideos.map((v) => v.id);
+        } else if ((this.state.state === "liked" || this.state.state === "favorite") && this.state.likedVideos?.length) {
+            pool = this.state.likedVideos.map((v) => v.id);
+        } else if (this.state.state === "trending" && this.state.trendingVideos?.length) {
+            pool = this.state.trendingVideos.map((v) => v.id);
+        } else if (this.state.taggedVideos?.length) {
+            pool = this.state.taggedVideos.map((v) => v.id);
+        }
+
+        if (pool.length === 0) return;
+
+        // Shuffle pool to assign distinct random videos to sections
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const s1Current = this.state.positions[1];
+        const remaining = shuffled.filter((id) => id !== s1Current);
+
+        this.state.positions[1] = s1Current && pool.includes(s1Current) ? s1Current : (shuffled[0] || 0);
+        this.state.positions[2] = remaining[0] || shuffled[1 % shuffled.length] || 0;
+        this.state.positions[3] = remaining[1] || shuffled[2 % shuffled.length] || 0;
+        this.state.positions[4] = remaining[2] || shuffled[3 % shuffled.length] || 0;
     }
 
     private getVisibleSections(): SectionId[] {
@@ -575,6 +616,7 @@ class Players {
                 Array.from(document.getElementsByClassName("player")).forEach((player) => {
                     (player as HTMLElement).style.objectFit = "cover";
                 });
+                this.initMultiSectionRandomVideos();
             } else {
                 this.state.sectionIds = [1];
                 Array.from(document.getElementsByClassName("player")).forEach((player) => {
@@ -583,7 +625,6 @@ class Players {
             }
             this.html.init();
             this.html.metadata.init();
-            this.html.hideForms(true);
             this.loadVideos();
         });
 

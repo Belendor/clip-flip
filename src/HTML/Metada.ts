@@ -134,6 +134,30 @@ export default class Metadata {
         if (!form) throw new Error("Metadata form not found");
         form.replaceChildren();
 
+        // In multisection mode, render an ultra-compact tags-only overlay for each video
+        if (this.state.multiSection) {
+            form.className = "metadata-form compact-multisection";
+            form.style.left = "";
+            form.style.top = "";
+            form.style.bottom = "";
+            form.style.right = "";
+            this.setMetadataVisibility(form, Boolean(this.metaVisible[section]));
+
+            const videoTagsWrapper = this.html.createDiv(
+                `video-tags-wrapper-${section}`,
+                "tag-container metadata-tag-list compact-tag-list"
+            );
+            form.appendChild(videoTagsWrapper);
+            this.html.videoTagsContainers[section] = videoTagsWrapper;
+            return;
+        }
+
+        form.className = "metadata-form";
+        form.style.left = "";
+        form.style.top = "";
+        form.style.bottom = "";
+        form.style.right = "";
+
         if (!this.metaVisible[section] && this.metaVisible[section] == null) {
             throw Error("Visibility not found");
         }

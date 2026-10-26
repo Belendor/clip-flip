@@ -1976,6 +1976,75 @@ body {
     display: none !important;
 }
 
+/* ── Compact Multisection Metadata ───────────────────────── */
+.metadata-form.compact-multisection {
+    z-index: 30;
+    position: absolute !important;
+    left: 8px !important;
+    bottom: 8px !important;
+    top: auto !important;
+    right: auto !important;
+    width: auto !important;
+    max-width: calc(100% - 16px) !important;
+    max-height: 76px !important;
+    min-width: 0 !important;
+    padding: 3px 5px !important;
+    background: rgba(10, 13, 18, 0.45) !important;
+    backdrop-filter: blur(8px) saturate(120%) !important;
+    -webkit-backdrop-filter: blur(8px) saturate(120%) !important;
+    border-radius: 10px !important;
+    border: 0.5px solid rgba(255, 255, 255, 0.14) !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    display: flex !important;
+    align-items: center !important;
+    pointer-events: auto !important;
+    cursor: default;
+}
+
+.metadata-form.compact-multisection.hidden {
+    display: none !important;
+}
+
+.metadata-form.compact-multisection .compact-tag-list {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 3px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.metadata-form.compact-multisection .compact-tag-list .tag-button {
+    font-size: 0.68rem !important;
+    padding: 2px 7px !important;
+    height: auto !important;
+    min-height: 20px !important;
+    border-radius: 6px !important;
+    line-height: 1.2 !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 0.5px solid rgba(255, 255, 255, 0.18) !important;
+    color: #e2e8f0 !important;
+    cursor: pointer !important;
+    margin: 1px !important;
+    transition: all 0.15s ease !important;
+}
+
+.metadata-form.compact-multisection .compact-tag-list .tag-button:hover {
+    background: rgba(255, 255, 255, 0.22) !important;
+    border-color: rgba(56, 189, 248, 0.5) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+}
+
+.metadata-form.compact-multisection .compact-tag-list .tag-button.active-tag {
+    background: rgba(16, 185, 129, 0.3) !important;
+    border-color: #34d399 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.4) !important;
+}
+
 .metadata-form::-webkit-scrollbar {
     display: none;
     width: 0;

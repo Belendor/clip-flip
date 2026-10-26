@@ -167,7 +167,7 @@ export default class HTML {
     ) {
         container.innerHTML = "";
         const fragment = document.createDocumentFragment();
-        const visibleCount = 7;
+        const visibleCount = this.state.multiSection ? 5 : 7;
 
         tags.forEach((tag, index) => {
             const button = document.createElement("button");
@@ -196,23 +196,25 @@ export default class HTML {
                 onToggleTag?.(tag.title, true);
             });
 
-            const deleteButton = document.createElement("span");
-            deleteButton.className = "tag-delete";
-            deleteButton.classList.toggle("hidden", !this.state.advancedMode);
-            deleteButton.innerHTML = "&times;";
-            deleteButton.title = `Delete tag "${tag.title}"`;
-            deleteButton.addEventListener("click", async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
+            if (!this.state.multiSection) {
+                const deleteButton = document.createElement("span");
+                deleteButton.className = "tag-delete";
+                deleteButton.classList.toggle("hidden", !this.state.advancedMode);
+                deleteButton.innerHTML = "&times;";
+                deleteButton.title = `Delete tag "${tag.title}"`;
+                deleteButton.addEventListener("click", async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
 
-                if (!onDeleteTag || !videoId) return;
-                if (!confirm(`Delete tag "${tag.title}" from this video?`)) return;
+                    if (!onDeleteTag || !videoId) return;
+                    if (!confirm(`Delete tag "${tag.title}" from this video?`)) return;
 
-                await onDeleteTag(tag, videoId);
-                button.remove();
-            });
+                    await onDeleteTag(tag, videoId);
+                    button.remove();
+                });
 
-            button.appendChild(deleteButton);
+                button.appendChild(deleteButton);
+            }
             fragment.appendChild(button);
         });
 
