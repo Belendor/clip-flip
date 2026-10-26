@@ -67,7 +67,21 @@ class Players {
             this.attachMetadataTabListeners();
         };
 
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlIdRaw = urlParams.get("id");
+        const hasUrlId = !!(urlIdRaw && !isNaN(parseInt(urlIdRaw, 10)));
+
         const hasCache = await this.state.cacheInitPromise;
+
+        if (hasUrlId) {
+            this.state.state = "random";
+            this.state.randomized = false;
+            this.html.metadata.init();
+            this.attachMetadataTabListeners();
+            await this.state.taggedVideosPromise;
+            await this.loadVideos(false);
+            return;
+        }
 
         if (this.state.state === "liked" && !this.user.currentUser) {
             this.state.state = "trending";

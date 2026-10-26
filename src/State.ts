@@ -121,8 +121,22 @@ class State {
                     if (rawLast) lastId = Number(rawLast);
                 } catch (_) {}
 
+                const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+                const queryId = urlParams?.get("id");
+                let urlVideoId = 0;
+                if (queryId) {
+                    const parsed = parseInt(queryId, 10);
+                    if (!isNaN(parsed) && parsed > 0) {
+                        urlVideoId = parsed;
+                    }
+                }
+
                 let chosenId = 0;
-                if (this.state === "trending" && this.trendingVideos.length > 0) {
+                if (urlVideoId > 0) {
+                    this.state = "random";
+                    this.randomized = false;
+                    chosenId = urlVideoId;
+                } else if (this.state === "trending" && this.trendingVideos.length > 0) {
                     this.randomized = false;
                     chosenId = this.trendingVideos[0].id;
                 } else if ((this.state === "liked" || this.state === "favorite") && this.likedVideos.length > 0) {
@@ -228,23 +242,30 @@ class State {
         const queryAdmin = params.get("admin");
         const queryId = params.get("id");
 
+        let targetVideoId: number | null = null;
         if (queryId) {
             const videoId = parseInt(queryId, 10);
-            if (!isNaN(videoId)) {
-                this.modifyPosition(1, false, videoId);
-                console.log("Starting with video ID from URL:", videoId);
+            if (!isNaN(videoId) && videoId > 0) {
+                targetVideoId = videoId;
+                this.state = "random";
                 this.randomized = false;
-                return;
+                this.positions = { 1: videoId, 2: videoId, 3: videoId, 4: videoId };
+                this.played.delete(videoId);
+                console.log("Starting with video ID from URL:", videoId);
             }
         }
         if (queryAdmin) {
             this.adminMode = true;
             console.log("Admin mode enabled");
-            return;
         }
         if (!queryTagsRaw) {
             this.resetActiveTags();
             await this.fetchAllVideos();
+            if (targetVideoId) {
+                this.state = "random";
+                this.randomized = false;
+                this.positions = { 1: targetVideoId, 2: targetVideoId, 3: targetVideoId, 4: targetVideoId };
+            }
             console.log("No URL tags found, fetched all videos from DB");
             return;
         }
@@ -257,6 +278,11 @@ class State {
         console.log("URL tags found:", queryTagsRaw);
         this.resetActiveTags(tagsArray);
         await this.fetchVideosByTags(1);
+        if (targetVideoId) {
+            this.state = "random";
+            this.randomized = false;
+            this.positions = { 1: targetVideoId, 2: targetVideoId, 3: targetVideoId, 4: targetVideoId };
+        }
     }
 
     async takeNextVideoId(section: SectionId, random: boolean = false, skip: boolean = false): Promise<number> {
@@ -325,7 +351,10 @@ class State {
         // Tagged / DB videos
         if (this.taggedVideos != null) {
             if (this.taggedVideos.length === 0) { this.positions[section] = 0; return; }
-            const availableTagged = this.taggedVideos.filter((video) => !this.played.has(video.id));
+            const pool = this.randomized
+                ? this.taggedVideos.filter((video) => !this.played.has(video.id))
+                : this.taggedVideos;
+            const availableTagged = pool.length > 0 ? pool : this.taggedVideos;
             if (availableTagged.length === 0) { this.positions[section] = 0; return; }
             if (this.randomized) {
                 const roll = Math.random() * 100;
@@ -337,7 +366,12 @@ class State {
             }
             const videoIds = availableTagged.map((video) => video.id);
             const currentIndex = videoIds.indexOf(this.positions[section]);
-            this.positions[section] = videoIds[currentIndex + 1] ?? videoIds[0];
+            if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
+                this.positions[section] = videoIds[currentIndex + 1];
+            } else {
+                const nextVideo = availableTagged.find((v) => v.id > this.positions[section]);
+                this.positions[section] = nextVideo ? nextVideo.id : videoIds[0];
+            }
             return;
         }
 
