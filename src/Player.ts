@@ -1108,8 +1108,11 @@ class Players {
             case "random":
                 this.state.randomized = true;
                 this.state.endIndex = config.defaultEndIndex;
-                await this.state.modifyPosition(1, true, this.state.randomInRange(1, this.state.endIndex));
-                await this.state.modifyPosition(1);
+                const pool = this.state.taggedVideos && this.state.taggedVideos.length > 0 ? this.state.taggedVideos : null;
+                const randomStartId = pool
+                    ? pool[Math.floor(Math.random() * pool.length)].id
+                    : this.state.randomInRange(1, this.state.endIndex);
+                this.state.positions = { 1: randomStartId, 2: randomStartId, 3: randomStartId, 4: randomStartId };
                 break;
             case "trending":
                 this.state.randomized = false;

@@ -93,19 +93,19 @@ class State {
             }
             if (cachedVideos && cachedVideos.length > 0) {
                 this.hasCachedData = true;
-                const unwatched = cachedVideos.filter(v => !this.played.has(v.id));
+                const unwatched = cachedVideos.filter(v => !this.played.has(v.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatched;
 
-                // Prepare trending videos
+                // Prepare trending videos (highest rated first, natural ascending ID for ties)
                 const sorted = [...cachedVideos].sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
                     if (likesB !== likesA) return likesB - likesA;
                     return a.id - b.id;
                 });
-                this.trendingVideos = sorted.filter(v => !this.played.has(v.id));
+                this.trendingVideos = sorted;
 
-                // Prepare liked videos (most liked first, natural order for ties)
+                // Prepare liked videos (most liked first, natural ascending ID for ties)
                 const likedOnly = cachedVideos.filter(v => (v.likes ?? 0) > 0);
                 likedOnly.sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
@@ -113,7 +113,7 @@ class State {
                     if (likesB !== likesA) return likesB - likesA;
                     return a.id - b.id;
                 });
-                this.likedVideos = likedOnly.filter(v => !this.played.has(v.id));
+                this.likedVideos = likedOnly;
 
                 let lastId = 0;
                 try {
@@ -124,8 +124,7 @@ class State {
                 let chosenId = 0;
                 if (this.state === "trending" && this.trendingVideos.length > 0) {
                     this.randomized = false;
-                    const inTrending = lastId && !this.played.has(lastId) && this.trendingVideos.some(v => v.id === lastId);
-                    chosenId = inTrending ? lastId : this.trendingVideos[0].id;
+                    chosenId = this.trendingVideos[0].id;
                 } else if ((this.state === "liked" || this.state === "favorite") && this.likedVideos.length > 0) {
                     this.randomized = false;
                     const inLiked = lastId && !this.played.has(lastId) && this.likedVideos.some(v => v.id === lastId);
@@ -379,7 +378,7 @@ class State {
             const videos = await this.api.fetchVideos();
             if (videos && videos.length > 0) {
                 void dbCache.set("cached_all_videos", videos);
-                const unwatchedVideos = videos.filter((video) => !this.played.has(video.id));
+                const unwatchedVideos = videos.filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatchedVideos;
 
                 const sorted = [...videos].sort((a: any, b: any) => {
@@ -388,7 +387,7 @@ class State {
                     if (likesB !== likesA) return likesB - likesA;
                     return a.id - b.id;
                 });
-                this.trendingVideos = sorted.filter(video => !this.played.has(video.id));
+                this.trendingVideos = sorted;
 
                 const likedOnly = videos.filter((v) => (v.likes ?? 0) > 0);
                 likedOnly.sort((a, b) => {
@@ -397,7 +396,7 @@ class State {
                     if (likesB !== likesA) return likesB - likesA;
                     return a.id - b.id;
                 });
-                this.likedVideos = likedOnly.filter((video) => !this.played.has(video.id));
+                this.likedVideos = likedOnly;
 
                 if (!this.positions[1] || this.positions[1] === 0) {
                     if (unwatchedVideos.length === 0) {
@@ -439,7 +438,7 @@ class State {
 
         try {
             const videos = await this.api.fetchVideosByTags(tags, this.endIndex);
-            const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id));
+            const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
             this.taggedVideos = unwatchedVideos;
 
             if (unwatchedVideos.length === 0) {
@@ -469,10 +468,9 @@ class State {
                     if (likesB !== likesA) return likesB - likesA;
                     return a.id - b.id;
                 });
-                const unwatched = sorted.filter(video => !this.played.has(video.id));
-                this.trendingVideos = unwatched;
+                this.trendingVideos = sorted;
                 this.randomized = false;
-                const topVideo = unwatched.length > 0 ? unwatched[0] : sorted[0];
+                const topVideo = sorted[0];
                 const topId = topVideo ? topVideo.id : 0;
                 this.positions = {
                     1: topId,

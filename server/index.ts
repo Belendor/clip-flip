@@ -185,7 +185,8 @@ app.post('/videos', async (req: Request, res: Response) => {
       include: {
         tags: true,
         models: true
-      }
+      },
+      orderBy: { id: "asc" }
     });
 
     res.json(video);
@@ -218,7 +219,8 @@ app.post('/videos/remove-tag', async (req: Request, res: Response) => {
       include: {
         tags: true,
         models: true
-      }
+      },
+      orderBy: { id: "asc" }
     });
 
     res.json(video);
@@ -383,7 +385,7 @@ app.get("/videos", async (req: Request, res: Response) => {
         },
       },
     },
-    orderBy: { id: "desc" },
+    orderBy: { id: "asc" },
   });
 
   const mappedVideos = videos.map((video) => {
@@ -500,7 +502,8 @@ app.post('/videos/by-tags', async (req, res) => {
       include: {
         tags: true,
         models: true
-      }
+      },
+      orderBy: { id: "asc" }
     });
     res.json(videos);
   } catch (error) {

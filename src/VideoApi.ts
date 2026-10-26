@@ -47,8 +47,13 @@ export default class VideoApi {
     }
 
     async fetchVideos(search?: string): Promise<Video[]> {
-        const query = search ? `?search=${encodeURIComponent(search)}` : "";
-        return this.request<Video[]>(`/videos${query}`);
+        if (!search) {
+            return this.request<Video[]>("/videos");
+        }
+        if (search.startsWith("?")) {
+            return this.request<Video[]>(`/videos${search}`);
+        }
+        return this.request<Video[]>(`/videos?search=${encodeURIComponent(search)}`);
     }
 
     async updateVideo(payload: UpdateVideoPayload): Promise<void> {
