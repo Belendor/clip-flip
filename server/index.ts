@@ -1542,9 +1542,6 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
         users,
       },
     });
-        users,
-      },
-    });
   } catch (error) {
     console.error("Error fetching admin stats:", error);
     return res.status(500).json({ error: "Failed to fetch admin statistics" });
