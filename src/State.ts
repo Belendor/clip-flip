@@ -361,6 +361,22 @@ class State {
         return null;
     }
 
+    updateVideoInState(video: VideoWithRelations) {
+        if (!video || !video.id) return;
+        const replaceInList = (list: any[] | null) => {
+            if (!list) return;
+            const idx = list.findIndex(v => v.id === video.id);
+            if (idx >= 0) list[idx] = { ...list[idx], ...video };
+        };
+        replaceInList(this.taggedVideos);
+        replaceInList(this.trendingVideos);
+        replaceInList(this.likedVideos);
+        if (this.newVideos) {
+            const idx = this.newVideos.findIndex(v => v.id === video.id);
+            if (idx >= 0) this.newVideos[idx] = { ...this.newVideos[idx], ...video };
+        }
+    }
+
     async fetchAllVideos(): Promise<void> {
         this.played = this.getPlayedVideos();
         this.clearEmptyState();

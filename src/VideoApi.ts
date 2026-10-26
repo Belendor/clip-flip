@@ -56,8 +56,8 @@ export default class VideoApi {
         return this.request<Video[]>(`/videos?search=${encodeURIComponent(search)}`);
     }
 
-    async updateVideo(payload: UpdateVideoPayload): Promise<void> {
-        await this.request("/videos", {
+    async updateVideo(payload: UpdateVideoPayload): Promise<VideoWithRelations> {
+        return this.request<VideoWithRelations>("/videos", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),

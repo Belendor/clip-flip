@@ -172,10 +172,23 @@ app.post('/videos', async (req: Request, res: Response) => {
       updateData.models = { connectOrCreate: connectOrCreateModels };
     }
 
-    if (tag && typeof tag === 'object' && typeof tag.id === 'number') {
-      const tagConnectArray = [{ id: tag.id }];
-      createData.tags = { connect: tagConnectArray };
-      updateData.tags = { connect: tagConnectArray };
+    if (tag) {
+      let tagId = typeof tag === 'object' && tag.id ? Number(tag.id) : null;
+      let tagTitle = typeof tag === 'object' ? (tag.title || tag.name) : (typeof tag === 'string' ? tag : null);
+
+      if (tagId && !isNaN(tagId) && tagId > 0) {
+        const tagConnectArray = [{ id: tagId }];
+        createData.tags = { connect: tagConnectArray };
+        updateData.tags = { connect: tagConnectArray };
+      } else if (tagTitle && typeof tagTitle === 'string' && tagTitle.trim()) {
+        const cleanTitle = tagTitle.trim();
+        const tagConnectOrCreate = [{
+          where: { title: cleanTitle },
+          create: { title: cleanTitle }
+        }];
+        createData.tags = { connectOrCreate: tagConnectOrCreate };
+        updateData.tags = { connectOrCreate: tagConnectOrCreate };
+      }
     }
 
     const video = await prisma.video.upsert({
@@ -184,12 +197,26 @@ app.post('/videos', async (req: Request, res: Response) => {
       update: updateData,
       include: {
         tags: true,
-        models: true
+        models: true,
+        reactions: {
+          select: {
+            userId: true,
+            type: true,
+          },
+        },
       },
-      orderBy: { id: "asc" }
     });
 
-    res.json(video);
+    const likes = video.reactions.filter((r) => r.type === "like").length;
+    const dislikes = video.reactions.filter((r) => r.type === "dislike").length;
+    const mapped = {
+      ...video,
+      likes,
+      dislikes,
+      reactions: video.reactions,
+    };
+
+    res.json(mapped);
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({
@@ -220,7 +247,6 @@ app.post('/videos/remove-tag', async (req: Request, res: Response) => {
         tags: true,
         models: true
       },
-      orderBy: { id: "asc" }
     });
 
     res.json(video);

@@ -966,7 +966,12 @@ class Players {
         if (!videoId) return;
         try {
             await this.api.removeTag(videoId, tag.title);
-            if (this.metadataCache.has(videoId)) this.metadataCache.delete(videoId);
+            this.metadataCache.delete(videoId);
+            const currentVideo = this.state.getVideoById(videoId);
+            if (currentVideo && Array.isArray(currentVideo.tags)) {
+                currentVideo.tags = currentVideo.tags.filter((t) => t.title !== tag.title);
+                this.state.updateVideoInState(currentVideo);
+            }
         } catch (error) { console.error("Failed to delete tag", error); }
     }
 
@@ -1085,9 +1090,15 @@ class Players {
         else if (key === "tag") payload.tag = { id: tagId, title: value };
 
         try {
-            await this.api.updateVideo(payload);
-            this.metadataCache.delete(Number(videoId));
-            return this.getVideoMetadata(Number(videoId));
+            const updated = await this.api.updateVideo(payload);
+            const numId = Number(videoId);
+            this.metadataCache.delete(numId);
+            if (updated) {
+                this.state.updateVideoInState(updated);
+                this.metadataCache.set(numId, Promise.resolve(updated));
+                return updated;
+            }
+            return this.getVideoMetadata(numId, true);
         } catch (error) {
             console.error(`Failed to update metadata for video ${activeIndex}:`, error);
             return null;
