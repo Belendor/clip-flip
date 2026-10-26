@@ -600,14 +600,61 @@ class Players {
     private attachSearchListeners() {
         const searchInput = document.getElementById("search-input") as HTMLInputElement | null;
         const advancedPanel = document.getElementById("advancedPanel") as HTMLElement | null;
-        if (!searchInput) return;
+        if (!searchInput || !advancedPanel) return;
 
-        if (advancedPanel) {
+        const openSearchPanel = () => {
+            advancedPanel.classList.remove("hidden");
+            const val = searchInput.value.trim();
+            if (!val) {
+                this.renderTagResults(this.state.tags, advancedPanel, searchInput);
+            }
+        };
+
+        const closeSearchPanel = () => {
             advancedPanel.classList.add("hidden");
-        }
+            searchInput.blur();
+        };
+
+        searchInput.addEventListener("focus", openSearchPanel);
+        searchInput.addEventListener("click", openSearchPanel);
+
+        // Capture phase click listener: if clicking outside the tag thumbnail bar while open,
+        // close it and consume the event completely so it does not stop or skip video playback!
+        window.addEventListener(
+            "click",
+            (e) => {
+                if (advancedPanel.classList.contains("hidden")) return;
+                const target = e.target as HTMLElement | null;
+                if (!target) return;
+                if (!advancedPanel.contains(target) && target !== searchInput) {
+                    closeSearchPanel();
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            },
+            true
+        );
+
+        searchInput.addEventListener("input", async (event) => {
+            const value = (event.target as HTMLInputElement).value.trim();
+            advancedPanel.classList.remove("hidden");
+            if (!value) {
+                this.renderTagResults(this.state.tags, advancedPanel, searchInput);
+                return;
+            }
+            this.searchAbortController?.abort();
+            this.searchAbortController = new AbortController();
+            try {
+                const tags = await this.api.fetchTags(value);
+                this.renderTagResults(tags, advancedPanel, searchInput);
+            } catch (error) {
+                if ((error as Error).name !== "AbortError") console.error("Failed to search tags", error);
+            }
+        });
 
         const performSearch = async () => {
             const query = searchInput.value.trim();
+            closeSearchPanel();
             if (!query) {
                 if ((this.state.activeTags.get(1)?.length ?? 0) > 0) {
                     this.state.resetActiveTags();
@@ -621,7 +668,6 @@ class Players {
                 (t) => t.title.toLowerCase() === query.toLowerCase()
             )?.title || query;
 
-            searchInput.blur();
             await this.toggleTag(matchedTag, true);
         };
 
@@ -629,6 +675,8 @@ class Players {
             if (e.key === "Enter") {
                 e.preventDefault();
                 void performSearch();
+            } else if (e.key === "Escape") {
+                closeSearchPanel();
             }
         });
 
@@ -715,6 +763,8 @@ class Players {
 
             card.addEventListener("click", async (e) => {
                 e.stopPropagation();
+                advancedPanel.classList.add("hidden");
+                searchInput.blur();
                 await this.toggleTag(tag.title, true);
             });
             advancedPanel.appendChild(card);
