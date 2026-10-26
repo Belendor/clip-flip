@@ -58,8 +58,57 @@ interface SegmentItem {
   tempFirstThumbName: string;
   tempMiddleThumbName: string;
   title: string;
+  seriesNr?: number;
+  seriesTotal?: number;
   startTime: number;
   endTime: number;
+}
+
+// Ensures video segments from the same source clip/title maintain chronological sequence
+// even if individual segments were approved or added out of order
+function sortVideosPreservingSequence<T extends { id: number; title?: string | null; seriesNr?: number | null; startTime?: number | null }>(items: T[]): T[] {
+  const groupMap = new Map<string, T[]>();
+  const soloItems: T[] = [];
+
+  for (const item of items) {
+    const groupKey = item.title ? item.title.trim() : "";
+    if (groupKey) {
+      const list = groupMap.get(groupKey) || [];
+      list.push(item);
+      groupMap.set(groupKey, list);
+    } else {
+      soloItems.push(item);
+    }
+  }
+
+  interface VideoGroup {
+    anchorId: number;
+    items: T[];
+  }
+
+  const allGroups: VideoGroup[] = [];
+
+  for (const [_, groupList] of groupMap.entries()) {
+    groupList.sort((a, b) => {
+      const sA = a.seriesNr ?? (a.startTime != null ? a.startTime : 0);
+      const sB = b.seriesNr ?? (b.startTime != null ? b.startTime : 0);
+      if (sA !== sB) return sA - sB;
+      const tA = a.startTime ?? 0;
+      const tB = b.startTime ?? 0;
+      if (tA !== tB) return tA - tB;
+      return a.id - b.id;
+    });
+
+    const minId = Math.min(...groupList.map((v) => v.id));
+    allGroups.push({ anchorId: minId, items: groupList });
+  }
+
+  for (const solo of soloItems) {
+    allGroups.push({ anchorId: solo.id, items: [solo] });
+  }
+
+  allGroups.sort((a, b) => a.anchorId - b.anchorId);
+  return allGroups.flatMap((g) => g.items);
 }
 
 // Ensure all required directories exist
@@ -512,7 +561,8 @@ app.get("/videos", async (req: Request, res: Response) => {
     return res.json(trendingOnly);
   }
 
-  res.json(mappedVideos);
+  const sequenceOrderedVideos = sortVideosPreservingSequence(mappedVideos);
+  res.json(sequenceOrderedVideos);
 });
 
 app.get("/new", async (req: Request, res: Response) => {
@@ -524,7 +574,8 @@ app.get("/new", async (req: Request, res: Response) => {
       }
     });
 
-    res.json(videos);
+    const sequenceOrderedNew = sortVideosPreservingSequence(videos);
+    res.json(sequenceOrderedNew);
   } catch (error) {
     console.error("Failed to fetch new videos:", error);
     res.status(500).json({
@@ -805,6 +856,8 @@ app.post(
               title: videoTitle,
               startTime: 0,
               endTime: duration,
+              seriesNr: 1,
+              seriesTotal: 1,
               userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
               tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
             },
@@ -878,11 +931,15 @@ app.post(
             tempFirstThumbName,
             tempMiddleThumbName,
             title: videoTitle,
+            seriesNr: 1,
+            seriesTotal: 1,
             startTime: 0,
             endTime: duration,
           });
         } else {
           // Slice longer videos into segments
+          const totalSegments = Math.max(1, Math.floor(duration / segmentLength));
+          let segNr = 1;
           for (let start = 0; start + segmentLength <= duration; start += segmentLength) {
             const end = start + segmentLength;
             const mid = ((start + end) / 2).toFixed(2);
@@ -954,6 +1011,8 @@ app.post(
               tempFirstThumbName,
               tempMiddleThumbName,
               title: videoTitle,
+              seriesNr: segNr++,
+              seriesTotal: totalSegments,
               startTime: start,
               endTime: end,
             });
@@ -1115,6 +1174,8 @@ app.post(
               title: seg.title,
               startTime: seg.startTime,
               endTime: seg.endTime,
+              seriesNr: seg.seriesNr ?? null,
+              seriesTotal: seg.seriesTotal ?? null,
               userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
               tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
             },
@@ -1246,6 +1307,11 @@ app.post("/video/:id/approve", async (req: Request, res: Response) => {
       const video = await tx.video.create({
         data: {
           title: newVideo.title,
+          studio: newVideo.studio,
+          seriesNr: newVideo.seriesNr,
+          seriesTotal: newVideo.seriesTotal,
+          startTime: newVideo.startTime,
+          endTime: newVideo.endTime,
           userId: newVideo.userId,
           tags: {
             connect: newVideo.tags.map((tag) => ({ id: tag.id })),

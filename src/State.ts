@@ -367,6 +367,14 @@ class State {
     computeNextVideoId(baseId?: number): number {
         const currentId = baseId ?? this.positions[1] ?? 0;
 
+        // New mode (iterate stored newVideos array in sequence)
+        if (this.state === "new" && this.newVideos != null && this.newVideos.length > 0) {
+            const videoIds = this.newVideos.map((v) => v.id);
+            const currentIndex = videoIds.indexOf(currentId);
+            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+            return videoIds[nextIndex];
+        }
+
         // Liked mode (iterate stored array)
         if ((this.state === "liked" || this.state === "favorite") && this.likedVideos != null && this.likedVideos.length > 0) {
             const videoIds = this.likedVideos.map((v) => v.id);
@@ -403,9 +411,10 @@ class State {
             const currentIndex = videoIds.indexOf(currentId);
             if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
                 return videoIds[currentIndex + 1];
+            } else if (currentIndex >= 0 && currentIndex + 1 >= videoIds.length) {
+                return videoIds[0];
             } else {
-                const nextVideo = availableTagged.find((v) => v.id > currentId);
-                return nextVideo ? nextVideo.id : videoIds[0];
+                return videoIds[0];
             }
         }
 

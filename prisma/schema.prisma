@@ -13,6 +13,8 @@ model Video {
   seriesNr    Int?
   seriesTotal Int?
   studio      String?
+  startTime   Float?
+  endTime     Float?
 
   userId      Int?
   user        User?   @relation("UserUploadedVideos", fields: [userId], references: [id], onDelete: SetNull)
