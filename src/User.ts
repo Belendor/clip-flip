@@ -132,6 +132,57 @@ export default class User {
         }
     }
 
+    promptLogin(message = "Please sign in to like videos") {
+        try {
+            window.google?.accounts?.id?.prompt();
+        } catch (_) {}
+
+        const authPill = document.querySelector(".google-auth-pill");
+        if (authPill) {
+            authPill.classList.add("pulse-auth");
+            setTimeout(() => authPill.classList.remove("pulse-auth"), 2000);
+        }
+
+        this.showLoginToast(message);
+    }
+
+    showLoginToast(message: string) {
+        document.querySelector(".login-prompt-toast")?.remove();
+
+        const toast = document.createElement("div");
+        toast.className = "login-prompt-toast";
+        toast.innerHTML = `
+            <div class="login-toast-icon">♥</div>
+            <div class="login-toast-body">
+                <span class="login-toast-title">${message}</span>
+            </div>
+            <button type="button" class="login-toast-cta">Sign In</button>
+            <button type="button" class="login-toast-dismiss" aria-label="Close">&times;</button>
+        `;
+
+        const cta = toast.querySelector(".login-toast-cta") as HTMLButtonElement | null;
+        const dismiss = toast.querySelector(".login-toast-dismiss") as HTMLButtonElement | null;
+
+        cta?.addEventListener("click", () => {
+            toast.remove();
+            try {
+                window.google?.accounts?.id?.prompt();
+            } catch (_) {}
+            const pill = document.querySelector(".google-auth-pill") as HTMLElement | null;
+            pill?.focus();
+        });
+
+        dismiss?.addEventListener("click", () => toast.remove());
+
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            if (toast.isConnected) {
+                toast.classList.add("toast-fade-out");
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 4500);
+    }
+
     async handleGoogleLogin(response: { credential: string }) {
         try {
             const res = await fetch(`${config.apiUrl}/auth/google`, {

@@ -758,7 +758,7 @@ class Players {
 
                 favoriteBtn.addEventListener("click", async () => {
                     if (!this.user.currentUser) {
-                        (document.querySelector("#google-login div[role='button']") as HTMLElement)?.click();
+                        this.user.promptLogin("Please sign in to like videos");
                         return;
                     }
                     try {
