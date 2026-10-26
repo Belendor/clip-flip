@@ -40,7 +40,6 @@ class Players {
     }
 
     async init() {
-        this.showLoader();
         this.attachEventListeners();
         this.attachMetadataTabListeners();
         this.user.onAuthChange = async (user) => {
@@ -51,12 +50,22 @@ class Players {
             this.html.metadata.init();
             this.attachMetadataTabListeners();
         };
-        await Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
-        await this.loadVideos();
+
+        const hasCache = await this.state.cacheInitPromise;
+        if (hasCache) {
+            await this.loadVideos(false);
+            void Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
+        } else {
+            this.showLoader();
+            await Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
+            await this.loadVideos(true);
+        }
     }
 
-    async loadVideos(): Promise<void> {
-        this.showLoader();
+    async loadVideos(showSpinner = true): Promise<void> {
+        if (showSpinner && !this.state.hasCachedData) {
+            this.showLoader();
+        }
         const revision = ++this.loadRevision;
         this.state.clearEmptyState();
         this.html.hideNoVideosBox();
@@ -166,6 +175,9 @@ class Players {
     }
 
     private configurePlayer(player: HTMLVideoElement, videoId: number, preload: "metadata" | "auto") {
+        try {
+            localStorage.setItem("clipflip_last_video_id", String(videoId));
+        } catch (_) {}
         player.poster = this.buildPosterUrl(videoId);
         player.preload = preload;
         player.muted = this.muted;
@@ -592,13 +604,18 @@ class Players {
                 if (!newVideo) throw new Error(`New video with ID ${videoId} not found in state`);
                 this.metadataCache.set(videoId, Promise.resolve(newVideo));
             } else {
-                this.metadataCache.set(
-                    videoId,
-                    this.api.fetchVideoMetadata(videoId).catch((error) => {
-                        console.error(`Error fetching metadata for videoId ${videoId}:`, error);
-                        return null;
-                    }),
-                );
+                const fromState = this.state.getVideoById(videoId);
+                if (fromState && fromState.tags && fromState.tags.length > 0 && !refresh) {
+                    this.metadataCache.set(videoId, Promise.resolve(fromState));
+                } else {
+                    this.metadataCache.set(
+                        videoId,
+                        this.api.fetchVideoMetadata(videoId).catch((error) => {
+                            console.error(`Error fetching metadata for videoId ${videoId}:`, error);
+                            return fromState ?? null;
+                        }),
+                    );
+                }
             }
         }
         return this.metadataCache.get(videoId) ?? null;
@@ -978,6 +995,9 @@ class Players {
     private async switchMode(mode: "random" | "trending" | "new" | "favorite") {
         if (this.state.state === mode) return;
         this.state.state = mode;
+        try {
+            localStorage.setItem("clipflip_mode", mode);
+        } catch (_) {}
         this.metadataCache.clear();
         this.resetPlaybackSurface();
 

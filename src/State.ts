@@ -1,6 +1,7 @@
 import { config } from "./config";
 import VideoApi from "./VideoApi";
-import type { NewVideo, Tag, Video } from "./types";
+import type { NewVideo, Tag, Video, VideoWithRelations } from "./types";
+import { dbCache } from "./cache";
 
 export type SectionId = 1 | 2 | 3 | 4;
 export type PlayerIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -10,6 +11,8 @@ type PositionsMap = Record<SectionId, number>;
 
 class State {
     readonly PLAYED_KEY = "playedVideoIds";
+    readonly MODE_KEY = "clipflip_mode";
+    readonly LAST_VIDEO_KEY = "clipflip_last_video_id";
     sectionIds: SectionId[] = [1];
 
     private history: number[] = [];
@@ -47,8 +50,20 @@ class State {
     onEmptyPlays?: () => void;
     emptyPlays = false;
     adminMode = false;
+    hasCachedData = false;
+    cacheInitPromise: Promise<boolean>;
 
     constructor(private readonly api: VideoApi) {
+        try {
+            const savedMode = localStorage.getItem(this.MODE_KEY) as PlayerState | null;
+            if (savedMode && ["random", "trending", "favorite", "new"].includes(savedMode)) {
+                this.state = savedMode;
+            }
+        } catch (_) {}
+
+        this.played = this.getPlayedVideos();
+        this.cacheInitPromise = this.initCache();
+
         if (this.state === "new") {
             this.fetchNewVideos();
         } else {
@@ -57,6 +72,54 @@ class State {
         this.tagsPromise = this.fetchAllTags();
         this.taggedVideosPromise = this.queryTags();
         this.loadHistory();
+    }
+
+    async initCache(): Promise<boolean> {
+        try {
+            const cachedVideos = await dbCache.get<Video[]>("cached_all_videos");
+            const cachedTags = await dbCache.get<Tag[]>("cached_all_tags");
+            if (cachedTags && cachedTags.length > 0) {
+                this.tags = cachedTags;
+                this.allTags = [...cachedTags].sort((a, b) =>
+                    a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
+                );
+            }
+            if (cachedVideos && cachedVideos.length > 0) {
+                this.hasCachedData = true;
+                const unwatched = cachedVideos.filter(v => !this.played.has(v.id));
+                this.taggedVideos = unwatched;
+                const sorted = [...cachedVideos].sort((a: any, b: any) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesB !== likesA) return likesB - likesA;
+                    return b.id - a.id;
+                });
+                this.trendingVideos = sorted.filter(v => !this.played.has(v.id));
+
+                let lastId = 0;
+                try {
+                    const rawLast = localStorage.getItem(this.LAST_VIDEO_KEY);
+                    if (rawLast) lastId = Number(rawLast);
+                } catch (_) {}
+
+                let chosenId = 0;
+                if (lastId && !this.played.has(lastId)) {
+                    chosenId = lastId;
+                } else if (this.state === "trending" && this.trendingVideos.length > 0) {
+                    chosenId = this.trendingVideos[0].id;
+                } else if (unwatched.length > 0) {
+                    chosenId = unwatched[Math.floor(Math.random() * unwatched.length)].id;
+                }
+
+                if (chosenId) {
+                    this.positions = { 1: chosenId, 2: chosenId, 3: chosenId, 4: chosenId };
+                }
+                return true;
+            }
+        } catch (err) {
+            console.warn("Failed to load cached videos from IndexedDB:", err);
+        }
+        return false;
     }
 
     private createInitialPositions(): PositionsMap {
@@ -276,33 +339,60 @@ class State {
         this.positions[section] = 0;
     }
 
+    getVideoById(id: number): VideoWithRelations | null {
+        if (this.taggedVideos) {
+            const found = this.taggedVideos.find(v => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
+        if (this.trendingVideos) {
+            const found = this.trendingVideos.find(v => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
+        return null;
+    }
+
     async fetchAllVideos(): Promise<void> {
         this.played = this.getPlayedVideos();
         this.clearEmptyState();
         try {
             const videos = await this.api.fetchVideos();
-            const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id));
-            this.taggedVideos = unwatchedVideos;
+            if (videos && videos.length > 0) {
+                void dbCache.set("cached_all_videos", videos);
+                const unwatchedVideos = videos.filter((video) => !this.played.has(video.id));
+                this.taggedVideos = unwatchedVideos;
 
-            if (unwatchedVideos.length === 0) {
-                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
-                return;
+                const sorted = [...videos].sort((a: any, b: any) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesB !== likesA) return likesB - likesA;
+                    return b.id - a.id;
+                });
+                this.trendingVideos = sorted.filter(video => !this.played.has(video.id));
+
+                if (!this.positions[1] || this.positions[1] === 0) {
+                    if (unwatchedVideos.length === 0) {
+                        this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                        return;
+                    }
+
+                    const initialVideo = this.randomized
+                        ? unwatchedVideos[Math.floor(Math.random() * unwatchedVideos.length)]
+                        : unwatchedVideos[0];
+
+                    this.positions = {
+                        1: initialVideo.id,
+                        2: initialVideo.id,
+                        3: initialVideo.id,
+                        4: initialVideo.id,
+                    };
+                }
             }
-
-            const initialVideo = this.randomized
-                ? unwatchedVideos[Math.floor(Math.random() * unwatchedVideos.length)]
-                : unwatchedVideos[0];
-
-            this.positions = {
-                1: initialVideo.id,
-                2: initialVideo.id,
-                3: initialVideo.id,
-                4: initialVideo.id,
-            };
         } catch (error) {
             console.error("Failed to fetch all videos from API", error);
-            this.taggedVideos = [];
-            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            if (!this.taggedVideos) {
+                this.taggedVideos = [];
+                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            }
         }
     }
 
@@ -341,26 +431,32 @@ class State {
         this.clearEmptyState();
         try {
             const videos = await this.api.fetchVideos("?sort=trending");
-            // Sort by likes descending, then id descending
-            const sorted = [...(videos || [])].sort((a: any, b: any) => {
-                const likesA = a.likes ?? 0;
-                const likesB = b.likes ?? 0;
-                if (likesB !== likesA) return likesB - likesA;
-                return b.id - a.id;
-            });
-            const unwatched = sorted.filter(video => !this.played.has(video.id));
-            this.trendingVideos = unwatched;
-            this.randomized = false;
-            this.positions = {
-                1: unwatched[0]?.id || 0,
-                2: unwatched[0]?.id || 0,
-                3: unwatched[0]?.id || 0,
-                4: unwatched[0]?.id || 0,
-            };
+            if (videos && videos.length > 0) {
+                void dbCache.set("cached_all_videos", videos);
+                const sorted = [...videos].sort((a: any, b: any) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesB !== likesA) return likesB - likesA;
+                    return b.id - a.id;
+                });
+                const unwatched = sorted.filter(video => !this.played.has(video.id));
+                this.trendingVideos = unwatched;
+                this.randomized = false;
+                if (!this.positions[1] || this.positions[1] === 0) {
+                    this.positions = {
+                        1: unwatched[0]?.id || 0,
+                        2: unwatched[0]?.id || 0,
+                        3: unwatched[0]?.id || 0,
+                        4: unwatched[0]?.id || 0,
+                    };
+                }
+            }
         } catch (error) {
             console.error("Failed to fetch trending videos:", error);
-            this.trendingVideos = [];
-            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            if (!this.trendingVideos) {
+                this.trendingVideos = [];
+                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            }
         }
     }
 
@@ -395,15 +491,20 @@ class State {
     async fetchAllTags() {
         try {
             const tags = await this.api.fetchTags();
-            this.tags = tags;
-            this.allTags = [...tags].sort((a, b) =>
-                a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
-            );
-            console.log("Fetched all tags:", this.allTags.length);
+            if (tags && tags.length > 0) {
+                void dbCache.set("cached_all_tags", tags);
+                this.tags = tags;
+                this.allTags = [...tags].sort((a, b) =>
+                    a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
+                );
+                console.log("Fetched all tags:", this.allTags.length);
+            }
         } catch (error) {
             console.error("Failed to fetch tags:", error);
-            this.tags = [];
-            this.allTags = [];
+            if (!this.tags || this.tags.length === 0) {
+                this.tags = [];
+                this.allTags = [];
+            }
         }
     }
 
