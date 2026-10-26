@@ -402,8 +402,24 @@ app.get("/videos", async (req: Request, res: Response) => {
     };
   });
 
+  if (sort === "liked" || sort === "favorite" || sort === "favorites") {
+    const likedOnly = mappedVideos.filter((v) => v.likes > 0);
+    likedOnly.sort((a, b) => {
+      if (b.likes !== a.likes) {
+        return b.likes - a.likes; // Most liked first
+      }
+      return a.id - b.id; // Natural order (2, then 3, then 4)
+    });
+    return res.json(likedOnly);
+  }
+
   if (sort === "trending" || sort === "likes" || sort === "rating") {
-    mappedVideos.sort((a, b) => b.likes - a.likes);
+    mappedVideos.sort((a, b) => {
+      if (b.likes !== a.likes) {
+        return b.likes - a.likes;
+      }
+      return a.id - b.id;
+    });
   }
 
   res.json(mappedVideos);

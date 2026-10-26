@@ -43,7 +43,7 @@ class Players {
         this.attachEventListeners();
         this.attachMetadataTabListeners();
         this.user.onAuthChange = async (user) => {
-            if (!user && (this.state.state === "new" || this.state.state === "favorite")) {
+            if (!user && this.state.state === "new") {
                 await this.switchMode("trending");
                 return;
             }
@@ -293,7 +293,7 @@ class Players {
                 metaTab.onclick = async (e) => {
                     const targetBtn = (e.target as HTMLElement)?.closest<HTMLButtonElement>(".metadata-tab");
                     if (!targetBtn) return;
-                    const mode = targetBtn.dataset.mode as "random" | "trending" | "new" | "favorite";
+                    const mode = targetBtn.dataset.mode as "random" | "trending" | "liked" | "new" | "favorite";
                     if (!mode) return;
                     await this.switchMode(mode);
                 };
@@ -991,16 +991,17 @@ class Players {
         }
     }
 
-    private async switchMode(mode: "random" | "trending" | "new" | "favorite") {
-        if (this.state.state === mode) return;
-        this.state.state = mode;
+    private async switchMode(mode: "random" | "trending" | "liked" | "new" | "favorite") {
+        const normalizedMode = mode === "favorite" ? "liked" : mode;
+        if (this.state.state === normalizedMode) return;
+        this.state.state = normalizedMode;
         try {
-            localStorage.setItem("clipflip_mode", mode);
+            localStorage.setItem("clipflip_mode", normalizedMode);
         } catch (_) {}
         this.metadataCache.clear();
         this.resetPlaybackSurface();
 
-        switch (mode) {
+        switch (normalizedMode) {
             case "random":
                 this.state.randomized = true;
                 this.state.endIndex = config.defaultEndIndex;
@@ -1011,18 +1012,13 @@ class Players {
                 this.state.randomized = false;
                 await this.state.fetchTrendingVideos();
                 break;
+            case "liked":
+                this.state.randomized = false;
+                await this.state.fetchLikedVideos();
+                break;
             case "new":
                 this.state.randomized = false;
                 await this.state.fetchNewVideos();
-                break;
-            case "favorite":
-                const id = this.user?.getId();
-                if (!id) {
-                    alert("Please sign in to view your favorites.");
-                    return;
-                }
-                await this.state.fetchLikedVideos(id);
-                this.state.modifyPosition(1, false, 0);
                 break;
         }
         this.html.init();

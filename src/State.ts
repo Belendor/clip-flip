@@ -5,7 +5,7 @@ import { dbCache } from "./cache";
 
 export type SectionId = 1 | 2 | 3 | 4;
 export type PlayerIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
-type PlayerState = "random" | "trending" | "favorite" | "new";
+type PlayerState = "random" | "trending" | "liked" | "favorite" | "new";
 
 type PositionsMap = Record<SectionId, number>;
 
@@ -56,8 +56,8 @@ class State {
     constructor(private readonly api: VideoApi) {
         try {
             const savedMode = localStorage.getItem(this.MODE_KEY) as PlayerState | null;
-            if (savedMode && ["random", "trending", "favorite", "new"].includes(savedMode)) {
-                this.state = savedMode;
+            if (savedMode) {
+                this.state = savedMode === "favorite" ? "liked" : savedMode;
             }
         } catch (_) {}
 
@@ -88,13 +88,25 @@ class State {
                 this.hasCachedData = true;
                 const unwatched = cachedVideos.filter(v => !this.played.has(v.id));
                 this.taggedVideos = unwatched;
+
+                // Prepare trending videos
                 const sorted = [...cachedVideos].sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
                     if (likesB !== likesA) return likesB - likesA;
-                    return b.id - a.id;
+                    return a.id - b.id;
                 });
                 this.trendingVideos = sorted.filter(v => !this.played.has(v.id));
+
+                // Prepare liked videos (most liked first, natural order for ties)
+                const likedOnly = cachedVideos.filter(v => (v.likes ?? 0) > 0);
+                likedOnly.sort((a: any, b: any) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesB !== likesA) return likesB - likesA;
+                    return a.id - b.id;
+                });
+                this.likedVideos = likedOnly.filter(v => !this.played.has(v.id));
 
                 let lastId = 0;
                 try {
@@ -105,6 +117,8 @@ class State {
                 let chosenId = 0;
                 if (lastId && !this.played.has(lastId)) {
                     chosenId = lastId;
+                } else if ((this.state === "liked" || this.state === "favorite") && this.likedVideos.length > 0) {
+                    chosenId = this.likedVideos[0].id;
                 } else if (this.state === "trending" && this.trendingVideos.length > 0) {
                     chosenId = this.trendingVideos[0].id;
                 } else if (unwatched.length > 0) {
@@ -278,19 +292,11 @@ class State {
             this.saveHistory();
         }
 
-        // Favorites
-        if (this.state === "favorite" && this.likedVideos != null) {
+        // Liked mode (most liked first, natural order for ties)
+        if ((this.state === "liked" || this.state === "favorite") && this.likedVideos != null) {
             if (this.likedVideos.length === 0) { this.positions[section] = 0; return; }
             const availableVideos = this.likedVideos.filter(video => !this.played.has(video.id));
             if (availableVideos.length === 0) { this.positions[section] = 0; return; }
-            if (this.randomized) {
-                const roll = Math.random() * 100;
-                if (roll < this.percentChance || random) {
-                    const randomVideo = availableVideos[Math.floor(Math.random() * availableVideos.length)];
-                    this.positions[section] = randomVideo.id;
-                    return;
-                }
-            }
             const videoIds = availableVideos.map(video => video.id);
             const currentIndex = videoIds.indexOf(this.positions[section]);
             this.positions[section] = videoIds[currentIndex + 1] ?? videoIds[0];
@@ -348,6 +354,10 @@ class State {
             const found = this.trendingVideos.find(v => v.id === id);
             if (found) return found as VideoWithRelations;
         }
+        if (this.likedVideos) {
+            const found = this.likedVideos.find(v => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
         return null;
     }
 
@@ -365,9 +375,18 @@ class State {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
                     if (likesB !== likesA) return likesB - likesA;
-                    return b.id - a.id;
+                    return a.id - b.id;
                 });
                 this.trendingVideos = sorted.filter(video => !this.played.has(video.id));
+
+                const likedOnly = videos.filter((v) => (v.likes ?? 0) > 0);
+                likedOnly.sort((a, b) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesB !== likesA) return likesB - likesA;
+                    return a.id - b.id;
+                });
+                this.likedVideos = likedOnly.filter((video) => !this.played.has(video.id));
 
                 if (!this.positions[1] || this.positions[1] === 0) {
                     if (unwatchedVideos.length === 0) {
@@ -474,17 +493,38 @@ class State {
         }
     }
 
-    async fetchLikedVideos(userId: number): Promise<void> {
-        console.log("Fetching liked videos");
+    async fetchLikedVideos(): Promise<void> {
+        console.log("Fetching liked videos (most liked first, natural order for ties)");
         this.clearEmptyState();
         try {
-            if (!this.likedVideos || this.likedVideos.length === 0) {
-                this.likedVideos = await this.api.fetchLikedVideos(userId);
+            const videos = await this.api.fetchVideos("?sort=liked");
+            if (videos && videos.length > 0) {
+                void dbCache.set("cached_all_videos", videos);
             }
-            this.randomized = true;
-            this.positions = { 1: this.likedVideos[0]?.id || 0, 2: 0, 3: 0, 4: 0 };
+            const likedOnly = (videos || []).filter((v) => (v.likes ?? 0) > 0);
+            likedOnly.sort((a, b) => {
+                const likesA = a.likes ?? 0;
+                const likesB = b.likes ?? 0;
+                if (likesB !== likesA) return likesB - likesA;
+                return a.id - b.id;
+            });
+            const unwatched = likedOnly.filter((video) => !this.played.has(video.id));
+            this.likedVideos = unwatched;
+            this.randomized = false;
+            if (unwatched.length === 0) {
+                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                return;
+            }
+            this.positions = {
+                1: unwatched[0]?.id || 0,
+                2: unwatched[0]?.id || 0,
+                3: unwatched[0]?.id || 0,
+                4: unwatched[0]?.id || 0,
+            };
         } catch (error) {
             console.error("Failed to fetch liked videos:", error);
+            this.likedVideos = [];
+            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
         }
     }
 
