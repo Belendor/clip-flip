@@ -58,6 +58,9 @@ sudo cp dist/output.css "${WEB_ROOT}/dist/output.css"
 sudo usermod -a -G www-data ubuntu || true
 sudo chown -R www-data:www-data "${WEB_ROOT}"
 sudo chmod -R 775 "${WEB_ROOT}"
+# Ensure user ubuntu owns media directories with full permissions for SSH/SCP copy-pasting
+sudo chown -R ubuntu:www-data "${WEB_ROOT}/thumbnails" "${WEB_ROOT}/video" "${WEB_ROOT}/video1" 2>/dev/null || true
+sudo chmod -R 777 "${WEB_ROOT}/thumbnails" "${WEB_ROOT}/video" "${WEB_ROOT}/video1" 2>/dev/null || true
 
 echo "🌐 [6/6] Updating Nginx configuration and restarting services..."
 if [ -f "nginx/clipflip.conf" ]; then
