@@ -33,3 +33,7 @@ dist/
 *.db-journal
 prisma/*.db
 prisma/*.db-journal
+
+# Local image recognition test folder
+recognize/
+recognise/
