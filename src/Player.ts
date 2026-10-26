@@ -207,9 +207,8 @@ class Players {
     }
 
     private buildPosterUrl(videoId: number): string {
-        const folder = this.state.state === "new" ? config.videoSourcePathNew : config.videoSourcePath;
-        if (this.state.state === "new") return `${folder}thumbnails/${videoId}_first.jpg`;
-        return `${folder}thumbnails/${videoId}.jpg`;
+        if (this.state.state === "new") return `${config.videoSourcePathNew}thumbnails/${videoId}_first.jpg`;
+        return `${config.videoThumbnailPath}${videoId}.jpg`;
     }
 
     private getPlayerVideoId(player: HTMLVideoElement): number {

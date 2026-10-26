@@ -346,7 +346,7 @@ app.get("/seo-tags/:tag", async (req: Request, res: Response) => {
       videoCount: videos.length,
       clipCount: groupedClipCount,
       videoBaseUrl: "http://127.0.0.1",
-      thumbnailBaseUrl: "https://clip-flip.com/video/thumbnails/",
+      thumbnailBaseUrl: "https://clip-flip.com/thumbnail/videos/",
       videos,
     });
   } catch (error) {

@@ -27,7 +27,8 @@ echo "📁 [5/6] Deploying frontend assets to ${WEB_ROOT}..."
 sudo mkdir -p "${WEB_ROOT}/dist"
 sudo mkdir -p "${WEB_ROOT}/video"
 sudo mkdir -p "${WEB_ROOT}/video1/new/thumbnails"
-sudo mkdir -p "${WEB_ROOT}/thumbnails"
+sudo mkdir -p "${WEB_ROOT}/thumbnails/videos"
+sudo ln -sfn "${WEB_ROOT}/thumbnails" "${WEB_ROOT}/thumbnail"
 mkdir -p "${APP_DIR}/storage/temp/videos"
 
 # Ensure APP_DIR symlinks point to WEB_ROOT storage directories
@@ -48,6 +49,7 @@ if [ -d "${APP_DIR}/thumbnails" ] && [ ! -L "${APP_DIR}/thumbnails" ]; then
     rm -rf "${APP_DIR}/thumbnails"
 fi
 ln -sfn "${WEB_ROOT}/thumbnails" "${APP_DIR}/thumbnails"
+ln -sfn "${WEB_ROOT}/thumbnails" "${APP_DIR}/thumbnail"
 
 sudo cp index.html "${WEB_ROOT}/index.html"
 sudo cp dist/bundle.js "${WEB_ROOT}/dist/bundle.js"

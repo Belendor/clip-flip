@@ -18,6 +18,7 @@ const videoPath    = isLocal ? `${PROD_MEDIA_HOST}/video/` : "/video/";
 const videoPath1   = isLocal ? `${PROD_MEDIA_HOST}/video1/` : "/video1/";
 const videoPathNew = isLocal ? `${PROD_MEDIA_HOST}/video1/new/` : "/video1/new/";
 const thumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/thumbnails/` : "/thumbnails/";
+const videoThumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/thumbnail/videos/` : "/thumbnail/videos/";
 
 export const config = {
     baseUrl:             prodDomain,
@@ -25,6 +26,7 @@ export const config = {
     videoSourcePath2:    videoPath1,
     videoSourcePathNew:  videoPathNew,
     thumbnailSourcePath: thumbnailPath,
+    videoThumbnailPath:  videoThumbnailPath,
     defaultPercentChance: 25,
     defaultEndIndex:     endIndex,
     apiUrl:              apiURL,
