@@ -758,15 +758,21 @@ app.post(
           if (file.size > 5 * 1024 * 1024) {
             cleanupFiles(files.map((f) => f.path));
             return res.status(400).json({
-              error: `Quality check failed: Video "${file.originalname}" exceeds 5MB size limit (${(file.size / (1024 * 1024)).toFixed(2)}MB). Production uploads must be clips <= 5MB.`,
+              error: `Video is too heavy: "${file.originalname}" is ${(file.size / (1024 * 1024)).toFixed(2)} MB. Maximum allowed size is 5 MB.`,
             });
           }
 
           const duration = getVideoDuration(file.path);
-          if (duration < 1.95 || duration > 5.05) {
+          if (duration > 5.05) {
             cleanupFiles(files.map((f) => f.path));
             return res.status(400).json({
-              error: `Quality check failed: Clip "${file.originalname}" duration must be between 2s and 5s (got ${duration.toFixed(2)}s).`,
+              error: `Video is too long: "${file.originalname}" is ${duration.toFixed(1)}s. Clips must be 5 seconds or shorter (allowed range: 2s–5s).`,
+            });
+          }
+          if (duration < 1.95) {
+            cleanupFiles(files.map((f) => f.path));
+            return res.status(400).json({
+              error: `Video is too short: "${file.originalname}" is ${duration.toFixed(1)}s. Clips must be at least 2 seconds (allowed range: 2s–5s).`,
             });
           }
         }
@@ -1052,15 +1058,21 @@ app.post(
         if (videoFile.size > 5 * 1024 * 1024) {
           cleanupAll();
           return res.status(400).json({
-            error: `Quality check failed: Clip "${videoFile.originalname}" exceeds 5MB size limit (${(videoFile.size / (1024 * 1024)).toFixed(2)}MB).`,
+            error: `Video is too heavy: "${videoFile.originalname}" is ${(videoFile.size / (1024 * 1024)).toFixed(2)} MB. Maximum allowed size is 5 MB.`,
           });
         }
 
         const duration = getVideoDuration(videoFile.path);
-        if (duration < 1.95 || duration > 5.05) {
+        if (duration > 5.05) {
           cleanupAll();
           return res.status(400).json({
-            error: `Quality check failed: Clip "${videoFile.originalname}" duration must be between 2s and 5s (got ${duration.toFixed(2)}s).`,
+            error: `Video is too long: "${videoFile.originalname}" is ${duration.toFixed(1)}s. Clips must be 5 seconds or shorter (allowed range: 2s–5s).`,
+          });
+        }
+        if (duration < 1.95) {
+          cleanupAll();
+          return res.status(400).json({
+            error: `Video is too short: "${videoFile.originalname}" is ${duration.toFixed(1)}s. Clips must be at least 2 seconds (allowed range: 2s–5s).`,
           });
         }
       }

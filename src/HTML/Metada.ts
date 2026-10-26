@@ -190,16 +190,75 @@ export default class Metadata {
 
         const fileInput = document.createElement("input");
         fileInput.type = "file";
+        fileInput.accept = "video/mp4,video/webm,video/*";
         fileInput.multiple = true;
-        fileInput.className = "block w-full mb-2";
+        fileInput.className = "upload-file-input block w-full mb-2";
+
+        const filePreviewBox = document.createElement("div");
+        filePreviewBox.className = "upload-preview-box hidden";
+
+        const checkClipDuration = (file: File): Promise<number> => {
+            return new Promise((resolve) => {
+                const video = document.createElement("video");
+                video.preload = "metadata";
+                const url = URL.createObjectURL(file);
+                video.onloadedmetadata = () => {
+                    URL.revokeObjectURL(url);
+                    resolve(video.duration || 0);
+                };
+                video.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    resolve(0);
+                };
+                video.src = url;
+            });
+        };
+
+        fileInput.addEventListener("change", async () => {
+            const files = Array.from(fileInput.files || []);
+            if (!files.length) {
+                filePreviewBox.classList.add("hidden");
+                filePreviewBox.innerHTML = "";
+                return;
+            }
+            filePreviewBox.classList.remove("hidden");
+            filePreviewBox.innerHTML = `<div class="text-[11px] text-gray-300 font-semibold mb-1">Selected Clips (${files.length}):</div>`;
+
+            for (const f of files) {
+                const item = document.createElement("div");
+                const sizeMb = (f.size / (1024 * 1024)).toFixed(2);
+                item.className = "upload-preview-item";
+                item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-[10px] text-gray-400 font-mono">${sizeMb} MB...</span>`;
+                filePreviewBox.appendChild(item);
+
+                const dur = await checkClipDuration(f);
+                const isTooHeavy = f.size > 5 * 1024 * 1024;
+                const isTooLong = dur > 5.05;
+                const isTooShort = dur > 0 && dur < 1.95;
+
+                if (isTooHeavy) {
+                    item.className = "upload-preview-item is-invalid";
+                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too heavy (${sizeMb} MB)</span>`;
+                } else if (isTooLong) {
+                    item.className = "upload-preview-item is-invalid";
+                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too long (${dur.toFixed(1)}s)</span>`;
+                } else if (isTooShort) {
+                    item.className = "upload-preview-item is-invalid";
+                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="font-bold text-[10px]">⚠️ Too short (${dur.toFixed(1)}s)</span>`;
+                } else {
+                    item.className = "upload-preview-item is-valid";
+                    item.innerHTML = `<span class="truncate max-w-[170px]" title="${f.name}">${f.name}</span><span class="text-emerald-400 font-mono text-[10px]">✓ ${sizeMb} MB${dur > 0 ? ', ' + dur.toFixed(1) + 's' : ''}</span>`;
+                }
+            }
+        });
 
         const uploadTitleInput = document.createElement("input");
         uploadTitleInput.type = "text";
-        uploadTitleInput.placeholder = "Title";
-        uploadTitleInput.className = "block w-full mb-2 border border-gray-400 px-2 py-1 rounded";
+        uploadTitleInput.placeholder = "Clip title (optional)";
+        uploadTitleInput.className = "upload-text-input block w-full mb-2";
 
         const uploadTagSelect = document.createElement("select");
-        uploadTagSelect.className = "block w-full mb-2 border border-gray-400 px-2 py-1 rounded";
+        uploadTagSelect.className = "upload-tag-select block w-full mb-2";
         if (section === 1) { this.uploadTagSelect = uploadTagSelect; }
 
         const qualityNotice = document.createElement("div");
@@ -211,12 +270,30 @@ export default class Metadata {
         submitUploadBtn.textContent = "Upload";
         submitUploadBtn.className = "upload-submit-btn";
         submitUploadBtn.addEventListener("click", async () => {
-            if (!fileInput.files?.length) { alert("Please select a file."); return; }
+            if (!fileInput.files?.length) {
+                alert("Please select at least one video file to upload.");
+                return;
+            }
 
-            // Validate file sizes client-side (<= 5MB)
+            if (!uploadTagSelect.value) {
+                alert("Please select a tag for your video clip.");
+                return;
+            }
+
+            // Validate file sizes and durations client-side for immediate clear feedback
             for (const f of Array.from(fileInput.files)) {
                 if (f.size > 5 * 1024 * 1024) {
-                    alert(`File "${f.name}" exceeds the 5MB size limit (${(f.size / (1024 * 1024)).toFixed(2)}MB). Clips must be under 5MB.`);
+                    alert(`❌ Video is too heavy:\n"${f.name}" is ${(f.size / (1024 * 1024)).toFixed(2)} MB.\n\nMaximum allowed size is 5 MB.`);
+                    return;
+                }
+
+                const dur = await checkClipDuration(f);
+                if (dur > 5.05) {
+                    alert(`❌ Video is too long:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nClips must be 5 seconds or shorter (allowed range: 2s–5s).`);
+                    return;
+                }
+                if (dur > 0 && dur < 1.95) {
+                    alert(`❌ Video is too short:\n"${f.name}" is ${dur.toFixed(1)}s.\n\nClips must be at least 2 seconds (allowed range: 2s–5s).`);
                     return;
                 }
             }
@@ -239,6 +316,8 @@ export default class Metadata {
                 alert("Upload successful! Video processed and uploaded to production.");
                 fileInput.value = "";
                 uploadTitleInput.value = "";
+                filePreviewBox.classList.add("hidden");
+                filePreviewBox.innerHTML = "";
                 this.setUploadFormVisibility(false);
             } catch (error) {
                 console.error("Upload failed", error);
@@ -249,7 +328,7 @@ export default class Metadata {
             }
         });
 
-        uploadFormWrapper.append(uploadDragHandle, closeUploadBtn, fileInput, uploadTitleInput, uploadTagSelect, qualityNotice, submitUploadBtn);
+        uploadFormWrapper.append(uploadDragHandle, closeUploadBtn, fileInput, filePreviewBox, uploadTitleInput, uploadTagSelect, qualityNotice, submitUploadBtn);
         this.uploadFormWrapper = uploadFormWrapper;
         if (section === 1) { this.html.appRoot.appendChild(this.uploadFormWrapper); }
     }
@@ -327,11 +406,19 @@ export default class Metadata {
         if (!this.uploadTagSelect) return;
         await this.state.tagsPromise;
         this.uploadTagSelect.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "— Select a Tag —";
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        this.uploadTagSelect.appendChild(placeholder);
+
         this.state.allTags.forEach((tag) => {
             if (tag.id == null) return;
             const option = document.createElement("option");
             option.value = String(tag.id);
-            option.textContent = tag.title;
+            option.textContent = tag.title || `Tag #${tag.id}`;
             this.uploadTagSelect?.appendChild(option);
         });
     }
