@@ -202,6 +202,15 @@ async function analyzeMediaWithGrok(mediaPath: string, officialTags: ProdTag[]):
         framesToAnalyze = [mediaPath];
     }
 
+    const officialMap = new Map<string, string>();
+    for (const tag of officialTags) {
+        const raw = tag.title.toLowerCase().trim();
+        officialMap.set(raw, tag.title);
+        officialMap.set(raw.replace(/[\s\-_]+/g, ""), tag.title);
+        officialMap.set(raw.replace(/\s+/g, "-"), tag.title);
+        officialMap.set(raw.replace(/-/g, " "), tag.title);
+    }
+
     const systemPrompt = `You are an expert, objective adult media classification and content tagging AI for an explicit video and photo platform (ClipFlip).
 You must analyze explicit adult, erotic, and NSFW content with complete technical precision, accuracy, and uncensored descriptive objectivity.
 Do not censor, refuse, or shy away from anatomical or explicit sexual acts; precise taxonomy is essential.`;
@@ -210,14 +219,20 @@ Do not censor, refuse, or shy away from anatomical or explicit sexual acts; prec
 
     const userPrompt = `Analyze this explicit adult ${mediaTypeLabel} and categorize it using our official taxonomy.
 
-Official ClipFlip Tags Available:
-[${tagListString}]
+ALLOWED OFFICIAL CLIPFLIP TAGS (${officialTags.length} tags total):
+- Gender combinations: f, f+m, f+f, f+f+f, f+f+m, f+m+m, t, t+f, t+m, t+t, t+t+m
+- Anatomy: ass, boobs, big boobs, cock, huge cock, feet, pussy
+- Sexual acts: anal, blowjob, creampie, cum, deepthroat, double penetration, footjob, gangbang, gfj, handjob, humping, inserting, jerking, joi, kissing, rubbing, spanking, spitroast, tickling
+- Positions: bending, cowgirl, reverse cowgirl, doggy, missionary, prone bone, the pose
+- Attire & Clothing: panties, pantyhose, fishnets, high heels, lingerie, oil, stockings, under skirt, undressing
+- Body & Person types: amateur, bbw, bbc, curvy, femdom, milf, old, pawg, petite, pregnant, redhead, black hair, shemale
+- BDSM & Other: ballbusting, bondage, boob job, cfnm, chastity, choking, cuckold, flaccid, groping, pain, slapping, snooping, strapon, swinger, tease and denial, teen, walking
 
-Task instructions:
-1. Provide a detailed, candid, and precise description of the ${isVideo ? "entire video action progression from start to finish" : "scene"} (actors, gender combinations, positions, attire, sexual acts, anatomical details, camera angles, setting).
-2. From the Official ClipFlip Tags list above, identify all tags that accurately apply across the content. Only select tags that are truly evident or strongly characteristic. For each matched tag, provide a confidence score (1-100) and a brief reason.
-3. Identify the gender combination tag if applicable (e.g., "f", "f+m", "f+f", "f+f+m", "f+m+m", "t", "t+f", "t+m", etc.).
-4. If there are important elements depicted not covered by the official tags list, list them in "suggestedNewTags".
+STRICT ENFORCEMENT RULES:
+1. Every tag placed in "matchedTags" MUST be chosen EXCLUSIVELY from the ALLOWED OFFICIAL CLIPFLIP TAGS list above.
+2. DO NOT invent, generate, or alter tag names in "matchedTags". Use the exact string as written (e.g. use "prone bone", not "prone"; use "big boobs", not "big breasts").
+3. Systematically evaluate each tag in the allowed list: if visible or actively happening, include it in "matchedTags" with confidence (1-100) and brief reason.
+4. If you observe something noteworthy in the scene that does NOT exist in our official tag list (such as "tattoo", "bedroom", "POV"), you MUST put it in "suggestedNewTags", NEVER in "matchedTags".
 
 Output Format:
 You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw JSON), matching this structure:
@@ -225,9 +240,9 @@ You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw 
   "description": "Comprehensive description of scene, actions, progression, and details...",
   "genderCombination": "f+m",
   "matchedTags": [
-    { "tag": "tag_name", "confidence": 95, "reason": "Explanation of why this tag applies" }
+    { "tag": "exact_official_tag_name", "confidence": 95, "reason": "Explanation of why this tag applies" }
   ],
-  "suggestedNewTags": ["any_extra_tags"]
+  "suggestedNewTags": ["any_extra_tags_not_in_official_list"]
 }`;
 
     const contentArray: any[] = [];
@@ -275,7 +290,7 @@ You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw 
                     { role: "system", content: systemPrompt },
                     { role: "user", content: contentArray },
                 ],
-                temperature: 0.2,
+                temperature: 0.1,
                 max_tokens: 1500,
             }),
         });
@@ -294,17 +309,62 @@ You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw 
             if (match) jsonString = match[1];
         }
 
+        let parsed: GrokAnalysisResult;
         try {
-            return JSON.parse(jsonString) as GrokAnalysisResult;
+            parsed = JSON.parse(jsonString) as GrokAnalysisResult;
         } catch {
             console.warn("⚠️ Grok returned non-JSON text. Raw output:");
             console.log(rawContent);
-            return {
+            parsed = {
                 description: rawContent,
                 matchedTags: [],
                 suggestedNewTags: [],
             };
         }
+
+        // ── Strictly validate and filter matchedTags against official tags ──
+        const validatedMatches: TagMatch[] = [];
+        const seenTags = new Set<string>();
+        const extraSuggested = new Set<string>(parsed.suggestedNewTags || []);
+
+        for (const m of parsed.matchedTags || []) {
+            if (!m || !m.tag) continue;
+            const cleaned = m.tag.toLowerCase().trim();
+            const canonical = officialMap.get(cleaned)
+                || officialMap.get(cleaned.replace(/[\s\-_]+/g, ""))
+                || officialMap.get(cleaned.replace(/\s+/g, "-"))
+                || officialMap.get(cleaned.replace(/-/g, " "));
+
+            if (canonical && !seenTags.has(canonical)) {
+                seenTags.add(canonical);
+                validatedMatches.push({
+                    tag: canonical,
+                    confidence: Math.min(100, Math.max(1, m.confidence || 80)),
+                    reason: m.reason || "Detected in visual media"
+                });
+            } else if (!canonical) {
+                // If tag was NOT in the official list, move to suggestedNewTags
+                extraSuggested.add(m.tag);
+            }
+        }
+
+        // Include gender combination if it is an official tag and not already added
+        if (parsed.genderCombination) {
+            const gcClean = parsed.genderCombination.toLowerCase().trim();
+            const gcCanonical = officialMap.get(gcClean);
+            if (gcCanonical && !seenTags.has(gcCanonical)) {
+                seenTags.add(gcCanonical);
+                validatedMatches.unshift({
+                    tag: gcCanonical,
+                    confidence: 98,
+                    reason: `Identified participants: ${gcCanonical}`
+                });
+            }
+        }
+
+        parsed.matchedTags = validatedMatches;
+        parsed.suggestedNewTags = Array.from(extraSuggested);
+        return parsed;
     } finally {
         // Clean up temporary extracted frames
         if (tempDirToClean && fs.existsSync(tempDirToClean)) {
