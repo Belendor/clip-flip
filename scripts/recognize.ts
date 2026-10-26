@@ -1,5 +1,7 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
+import { execSync } from "child_process";
 
 // Load .env file manually if exists
 function loadEnv() {
@@ -45,7 +47,12 @@ interface GrokAnalysisResult {
     suggestedNewTags?: string[];
 }
 
-const SUPPORTED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"]);
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"]);
+
+function isVideoFile(filePath: string): boolean {
+    return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
 
 function getMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
@@ -68,7 +75,7 @@ function getMimeType(filePath: string): string {
     }
 }
 
-function findTargetImage(): string | null {
+function findTargetMedia(): string | null {
     // 1. Check if user passed a file argument
     const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
     for (const arg of args) {
@@ -87,15 +94,60 @@ function findTargetImage(): string | null {
     for (const dir of candidateDirs) {
         if (!fs.existsSync(dir)) continue;
         const files = fs.readdirSync(dir);
+        // Prioritize videos if any, otherwise images
         for (const file of files) {
             const ext = path.extname(file).toLowerCase();
-            if (SUPPORTED_EXTENSIONS.has(ext)) {
+            if (VIDEO_EXTENSIONS.has(ext)) {
+                return path.join(dir, file);
+            }
+        }
+        for (const file of files) {
+            const ext = path.extname(file).toLowerCase();
+            if (IMAGE_EXTENSIONS.has(ext)) {
                 return path.join(dir, file);
             }
         }
     }
 
     return null;
+}
+
+function extractFramesFromVideo(videoPath: string, frameCount = 5): { framePaths: string[]; tempDir: string; duration: number } {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "clipflip-frames-"));
+    let duration = 10;
+
+    try {
+        const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`;
+        const output = execSync(probeCmd, { encoding: "utf-8" }).trim();
+        const parsed = parseFloat(output);
+        if (!isNaN(parsed) && parsed > 0) duration = parsed;
+    } catch (e) {
+        console.warn("Could not determine exact duration with ffprobe, defaulting to 10s.");
+    }
+
+    console.log(`⏱️  Video duration: ${duration.toFixed(1)}s. Extracting ${frameCount} keyframes...`);
+    const framePaths: string[] = [];
+
+    for (let i = 0; i < frameCount; i++) {
+        const pct = (i + 1) / (frameCount + 1);
+        const timestamp = (pct * duration).toFixed(2);
+        const outFrame = path.join(tempDir, `frame_${i + 1}.jpg`);
+
+        try {
+            execSync(`ffmpeg -ss ${timestamp} -i "${videoPath}" -vframes 1 -q:v 2 "${outFrame}" -y -loglevel error`);
+            if (fs.existsSync(outFrame)) {
+                framePaths.push(outFrame);
+            }
+        } catch (err) {
+            console.warn(`Failed to extract frame at ${timestamp}s:`, (err as Error).message);
+        }
+    }
+
+    if (framePaths.length === 0) {
+        throw new Error("FFmpeg failed to extract any frames from video.");
+    }
+
+    return { framePaths, tempDir, duration };
 }
 
 async function fetchProdTags(): Promise<ProdTag[]> {
@@ -125,7 +177,7 @@ async function fetchProdTags(): Promise<ProdTag[]> {
     }
 }
 
-async function analyzeWithGrok(imagePath: string, officialTags: ProdTag[]): Promise<GrokAnalysisResult> {
+async function analyzeMediaWithGrok(mediaPath: string, officialTags: ProdTag[]): Promise<GrokAnalysisResult> {
     const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
     if (!apiKey) {
         console.error("\n❌ ERROR: XAI_API_KEY or GROK_API_KEY is not set.");
@@ -134,32 +186,43 @@ async function analyzeWithGrok(imagePath: string, officialTags: ProdTag[]): Prom
     }
 
     const model = process.env.GROK_MODEL || "grok-4.20-non-reasoning";
-    const mimeType = getMimeType(imagePath);
-    const imageBuffer = fs.readFileSync(imagePath);
-    const base64Data = imageBuffer.toString("base64");
-    const dataUrl = `data:${mimeType};base64,${base64Data}`;
-
+    const isVideo = isVideoFile(mediaPath);
     const tagListString = officialTags.map((t) => t.title).join(", ");
 
+    let framesToAnalyze: string[] = [];
+    let tempDirToClean: string | null = null;
+    let videoDuration = 0;
+
+    if (isVideo) {
+        const extracted = extractFramesFromVideo(mediaPath, 5);
+        framesToAnalyze = extracted.framePaths;
+        tempDirToClean = extracted.tempDir;
+        videoDuration = extracted.duration;
+    } else {
+        framesToAnalyze = [mediaPath];
+    }
+
     const systemPrompt = `You are an expert, objective adult media classification and content tagging AI for an explicit video and photo platform (ClipFlip).
-You must analyze explicit adult, erotic, and NSFW images with complete technical precision, accuracy, and uncensored descriptive objectivity.
+You must analyze explicit adult, erotic, and NSFW content with complete technical precision, accuracy, and uncensored descriptive objectivity.
 Do not censor, refuse, or shy away from anatomical or explicit sexual acts; precise taxonomy is essential.`;
 
-    const userPrompt = `Analyze this explicit/adult image and categorize it using our official taxonomy.
+    const mediaTypeLabel = isVideo ? `video clip (${framesToAnalyze.length} chronological frames across ${videoDuration.toFixed(1)} seconds)` : "image";
+
+    const userPrompt = `Analyze this explicit adult ${mediaTypeLabel} and categorize it using our official taxonomy.
 
 Official ClipFlip Tags Available:
 [${tagListString}]
 
 Task instructions:
-1. Provide a detailed, candid, and precise description of the image content (actors, gender combinations, positions, attire, sexual acts, anatomical details, camera angle, setting).
-2. From the Official ClipFlip Tags list above, identify all tags that accurately apply to this image. Only select tags that are truly evident or strongly characteristic of the image. For each matched tag, provide a confidence score (1-100) and a brief reason.
+1. Provide a detailed, candid, and precise description of the ${isVideo ? "entire video action progression from start to finish" : "scene"} (actors, gender combinations, positions, attire, sexual acts, anatomical details, camera angles, setting).
+2. From the Official ClipFlip Tags list above, identify all tags that accurately apply across the content. Only select tags that are truly evident or strongly characteristic. For each matched tag, provide a confidence score (1-100) and a brief reason.
 3. Identify the gender combination tag if applicable (e.g., "f", "f+m", "f+f", "f+f+m", "f+m+m", "t", "t+f", "t+m", etc.).
-4. If there are important elements in the image not covered by the official tags list, list them in "suggestedNewTags".
+4. If there are important elements depicted not covered by the official tags list, list them in "suggestedNewTags".
 
 Output Format:
 You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw JSON), matching this structure:
 {
-  "description": "Comprehensive description of scene, actions, and details...",
+  "description": "Comprehensive description of scene, actions, progression, and details...",
   "genderCombination": "f+m",
   "matchedTags": [
     { "tag": "tag_name", "confidence": 95, "reason": "Explanation of why this tag applies" }
@@ -167,93 +230,114 @@ You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw 
   "suggestedNewTags": ["any_extra_tags"]
 }`;
 
-    console.log(`🤖 Sending image to Grok Vision (${model})...`);
+    const contentArray: any[] = [];
 
-    const payload = {
-        model,
-        messages: [
-            { role: "system", content: systemPrompt },
-            {
-                role: "user",
-                content: [
-                    {
-                        type: "image_url",
-                        image_url: {
-                            url: dataUrl,
-                            detail: "high",
-                        },
-                    },
-                    {
-                        type: "text",
-                        text: userPrompt,
-                    },
-                ],
+    // Add each frame as an image_url
+    for (let i = 0; i < framesToAnalyze.length; i++) {
+        const framePath = framesToAnalyze[i];
+        const mimeType = getMimeType(framePath);
+        const imageBuffer = fs.readFileSync(framePath);
+        const base64Data = imageBuffer.toString("base64");
+        const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+        if (isVideo) {
+            contentArray.push({
+                type: "text",
+                text: `[Frame ${i + 1} of ${framesToAnalyze.length} - Chronological timeline]`,
+            });
+        }
+        contentArray.push({
+            type: "image_url",
+            image_url: {
+                url: dataUrl,
+                detail: "high",
             },
-        ],
-        temperature: 0.2,
-        max_tokens: 1500,
-    };
+        });
+    }
 
-    const response = await fetch("https://api.x.ai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(payload),
+    contentArray.push({
+        type: "text",
+        text: userPrompt,
     });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`xAI Grok API error (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    const rawContent: string = data.choices?.[0]?.message?.content || "";
-
-    // Parse JSON from response
-    let jsonString = rawContent.trim();
-    if (jsonString.includes("```")) {
-        const match = jsonString.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (match) jsonString = match[1];
-    }
+    console.log(`🤖 Sending ${framesToAnalyze.length} frame(s) to Grok Vision (${model})...`);
 
     try {
-        const parsed: GrokAnalysisResult = JSON.parse(jsonString);
-        return parsed;
-    } catch (parseError) {
-        console.warn("⚠️ Grok returned non-JSON text. Raw output:");
-        console.log(rawContent);
-        return {
-            description: rawContent,
-            matchedTags: [],
-            suggestedNewTags: [],
-        };
+        const response = await fetch("https://api.x.ai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: contentArray },
+                ],
+                temperature: 0.2,
+                max_tokens: 1500,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`xAI Grok API error (${response.status}): ${errorText}`);
+        }
+
+        const data = await response.json();
+        const rawContent: string = data.choices?.[0]?.message?.content || "";
+
+        let jsonString = rawContent.trim();
+        if (jsonString.includes("```")) {
+            const match = jsonString.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (match) jsonString = match[1];
+        }
+
+        try {
+            return JSON.parse(jsonString) as GrokAnalysisResult;
+        } catch {
+            console.warn("⚠️ Grok returned non-JSON text. Raw output:");
+            console.log(rawContent);
+            return {
+                description: rawContent,
+                matchedTags: [],
+                suggestedNewTags: [],
+            };
+        }
+    } finally {
+        // Clean up temporary extracted frames
+        if (tempDirToClean && fs.existsSync(tempDirToClean)) {
+            try {
+                fs.rmSync(tempDirToClean, { recursive: true, force: true });
+            } catch (_) {}
+        }
     }
 }
 
 async function main() {
     console.log("\n=======================================================");
-    console.log("   ClipFlip Image Recognition & Auto-Tagging (Grok)");
+    console.log("   ClipFlip Media Recognition & Auto-Tagging (Grok)");
     console.log("=======================================================\n");
 
-    const imagePath = findTargetImage();
-    if (!imagePath) {
-        console.log("📁 No image found in ./recognize/");
+    const mediaPath = findTargetMedia();
+    if (!mediaPath) {
+        console.log("📁 No image or video found in ./recognize/");
         console.log("\n👉 How to use:");
-        console.log("   1. Put an image into the 'recognize' folder (e.g. recognize/test.jpg)");
+        console.log("   1. Put an image (.jpg, .png, .webp) or video (.mp4, .webm, .mov) in ./recognize/");
         console.log("   2. Run: npm run recognize");
-        console.log("   (Or specify a path: npm run recognize path/to/image.jpg)\n");
+        console.log("   (Or specify a path: npm run recognize path/to/video.mp4)\n");
         process.exit(0);
     }
 
-    const stats = fs.statSync(imagePath);
-    console.log(`🖼️  Image selected: ${path.basename(imagePath)}`);
-    console.log(`   Path: ${imagePath}`);
-    console.log(`   Size: ${(stats.size / 1024).toFixed(1)} KB`);
+    const stats = fs.statSync(mediaPath);
+    const isVideo = isVideoFile(mediaPath);
+    console.log(`${isVideo ? "🎬 Video" : "🖼️  Image"} selected: ${path.basename(mediaPath)}`);
+    console.log(`   Path: ${mediaPath}`);
+    console.log(`   Size: ${(stats.size / 1024 / (isVideo ? 1024 : 1)).toFixed(1)} ${isVideo ? "MB" : "KB"}`);
 
     const officialTags = await fetchProdTags();
-    const result = await analyzeWithGrok(imagePath, officialTags);
+    const result = await analyzeMediaWithGrok(mediaPath, officialTags);
 
     console.log("\n───────────────────────────────────────────────────────");
     console.log("📝 SCENE DESCRIPTION:");
@@ -271,7 +355,6 @@ async function main() {
     if (!result.matchedTags || result.matchedTags.length === 0) {
         console.log("No official tags matched with sufficient confidence.");
     } else {
-        // Sort by confidence descending
         result.matchedTags.sort((a, b) => b.confidence - a.confidence);
 
         for (const match of result.matchedTags) {
