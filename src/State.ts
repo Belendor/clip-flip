@@ -16,8 +16,7 @@ class State {
     sectionIds: SectionId[] = [1];
 
     private history: number[] = [];
-    private isInHistoryMode: boolean = false;
-    private playHistory: number[] = [];
+    private historyIndex: number = -1;
     private readonly HISTORY_KEY = 'video_play_history';
 
     isGoingBack: boolean = false;
@@ -172,22 +171,32 @@ class State {
     private loadHistory(): void {
         try {
             const raw = localStorage.getItem(this.HISTORY_KEY);
-            this.playHistory = raw ? JSON.parse(raw) : [];
+            this.history = raw ? JSON.parse(raw) : [];
+            this.historyIndex = this.history.length > 0 ? this.history.length - 1 : -1;
         } catch (e) {
             console.warn("Failed to load play history", e);
-            this.playHistory = [];
+            this.history = [];
+            this.historyIndex = -1;
         }
     }
 
     private saveHistory(): void {
         try {
-            if (this.playHistory.length > 100) {
-                this.playHistory = this.playHistory.slice(-100);
+            if (this.history.length > 200) {
+                const drop = this.history.length - 200;
+                this.history = this.history.slice(drop);
+                this.historyIndex = Math.max(0, this.historyIndex - drop);
             }
-            localStorage.setItem(this.HISTORY_KEY, JSON.stringify(this.playHistory));
+            localStorage.setItem(this.HISTORY_KEY, JSON.stringify(this.history));
         } catch (e) {
             console.warn("Failed to save play history", e);
         }
+    }
+
+    resetHistory(): void {
+        this.history = [];
+        this.historyIndex = -1;
+        localStorage.removeItem(this.HISTORY_KEY);
     }
 
     resetActiveTags(tags: string[] = []) {
@@ -285,10 +294,133 @@ class State {
         }
     }
 
+    recordPlayedVideo(videoId: number): void {
+        if (!videoId || videoId === 0) return;
+
+        // If this video is already the current entry in history, do nothing
+        if (this.historyIndex >= 0 && this.history[this.historyIndex] === videoId) {
+            return;
+        }
+
+        // If we are navigating through existing history and moving forward to the next recorded item:
+        if (
+            this.historyIndex >= 0 &&
+            this.historyIndex < this.history.length - 1 &&
+            this.history[this.historyIndex + 1] === videoId
+        ) {
+            this.historyIndex++;
+            this.positions[1] = videoId;
+            this.saveHistory();
+            return;
+        }
+
+        // If we diverged while in past history: truncate future history and append
+        if (this.historyIndex >= 0 && this.historyIndex < this.history.length - 1) {
+            this.history = this.history.slice(0, this.historyIndex + 1);
+        }
+
+        this.history.push(videoId);
+        this.historyIndex = this.history.length - 1;
+        this.positions[1] = videoId;
+        this.saveHistory();
+    }
+
+    canGoBack(): boolean {
+        return this.historyIndex > 0;
+    }
+
+    getPreviousVideoId(): number | null {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            const videoId = this.history[this.historyIndex];
+            this.positions[1] = videoId;
+            this.saveHistory();
+            return videoId;
+        }
+        return null;
+    }
+
+    canGoForwardInHistory(): boolean {
+        return this.historyIndex >= 0 && this.historyIndex < this.history.length - 1;
+    }
+
+    getNextVideoIdFromHistory(): number | null {
+        if (this.canGoForwardInHistory()) {
+            this.historyIndex++;
+            const videoId = this.history[this.historyIndex];
+            this.positions[1] = videoId;
+            this.saveHistory();
+            return videoId;
+        }
+        return null;
+    }
+
+    peekNextQueuedVideoId(currentId?: number): number {
+        // If we went back in history, the next queued video MUST be the video ahead in history
+        if (this.canGoForwardInHistory()) {
+            return this.history[this.historyIndex + 1];
+        }
+        // At the frontier: compute the next video segment or random jump
+        return this.computeNextVideoId(currentId ?? this.positions[1]);
+    }
+
+    computeNextVideoId(baseId?: number): number {
+        const currentId = baseId ?? this.positions[1] ?? 0;
+
+        // Liked mode (iterate stored array)
+        if ((this.state === "liked" || this.state === "favorite") && this.likedVideos != null && this.likedVideos.length > 0) {
+            const videoIds = this.likedVideos.map((v) => v.id);
+            const currentIndex = videoIds.indexOf(currentId);
+            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+            return videoIds[nextIndex];
+        }
+
+        // Trending mode (iterate stored array)
+        if (this.state === "trending" && this.trendingVideos != null && this.trendingVideos.length > 0) {
+            const videoIds = this.trendingVideos.map((v) => v.id);
+            const currentIndex = videoIds.indexOf(currentId);
+            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+            return videoIds[nextIndex];
+        }
+
+        // Tagged / DB videos
+        if (this.taggedVideos != null && this.taggedVideos.length > 0) {
+            const pool = this.randomized
+                ? this.taggedVideos.filter((video) => !this.played.has(video.id))
+                : this.taggedVideos;
+            const availableTagged = pool.length > 0 ? pool : this.taggedVideos;
+            if (availableTagged.length === 0) return 0;
+
+            if (this.randomized) {
+                const roll = Math.random() * 100;
+                if (roll < this.percentChance) {
+                    const randomVideo = availableTagged[Math.floor(Math.random() * availableTagged.length)];
+                    return randomVideo.id;
+                }
+            }
+
+            const videoIds = availableTagged.map((video) => video.id);
+            const currentIndex = videoIds.indexOf(currentId);
+            if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
+                return videoIds[currentIndex + 1];
+            } else {
+                const nextVideo = availableTagged.find((v) => v.id > currentId);
+                return nextVideo ? nextVideo.id : videoIds[0];
+            }
+        }
+
+        return 0;
+    }
+
     async takeNextVideoId(section: SectionId, random: boolean = false, skip: boolean = false): Promise<number> {
-        const currentVideoId = this.positions[section];
-        await this.modifyPosition(section);
-        return currentVideoId;
+        if (this.canGoForwardInHistory()) {
+            const historyId = this.getNextVideoIdFromHistory();
+            if (historyId != null) return historyId;
+        }
+
+        const nextId = this.computeNextVideoId(this.positions[section]);
+        this.positions[section] = nextId;
+        return nextId;
     }
 
     async modifyPosition(section: SectionId, random: boolean = false, id: number = 0): Promise<void> {
@@ -302,81 +434,8 @@ class State {
             return;
         }
 
-        this.played = this.getPlayedVideos();
-
-        // ── BACK LOGIC ────────────────────────────────────────────
-        if (this.isGoingBack) {
-            if (this.playHistory.length > 1) {
-                this.playHistory.pop();
-                const previousId = this.playHistory[this.playHistory.length - 1];
-                this.positions[section] = previousId;
-                console.log(`↩ Back to video: ${previousId}`);
-                if (this.playHistory.length <= 1) this.isGoingBack = false;
-                this.saveHistory();
-                return;
-            } else {
-                this.isGoingBack = false;
-            }
-        }
-
-        // ── FORWARD LOGIC ─────────────────────────────────────────
-        const currentPos = this.positions[section];
-        if (currentPos !== 0) {
-            if (this.playHistory.length === 0 || this.playHistory[this.playHistory.length - 1] !== currentPos) {
-                this.playHistory.push(currentPos);
-            }
-            this.saveHistory();
-        }
-
-        // Liked mode (iterate only through stored array)
-        if ((this.state === "liked" || this.state === "favorite") && this.likedVideos != null) {
-            if (this.likedVideos.length === 0) { this.positions[section] = 0; return; }
-            const videoIds = this.likedVideos.map(video => video.id);
-            const currentIndex = videoIds.indexOf(this.positions[section]);
-            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
-            this.positions[section] = videoIds[nextIndex];
-            return;
-        }
-
-        // Trending mode (highest rated / most liked - iterate only through stored array)
-        if (this.state === "trending" && this.trendingVideos != null) {
-            if (this.trendingVideos.length === 0) { this.positions[section] = 0; return; }
-            const videoIds = this.trendingVideos.map(video => video.id);
-            const currentIndex = videoIds.indexOf(this.positions[section]);
-            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
-            this.positions[section] = videoIds[nextIndex];
-            return;
-        }
-
-        // Tagged / DB videos
-        if (this.taggedVideos != null) {
-            if (this.taggedVideos.length === 0) { this.positions[section] = 0; return; }
-            const pool = this.randomized
-                ? this.taggedVideos.filter((video) => !this.played.has(video.id))
-                : this.taggedVideos;
-            const availableTagged = pool.length > 0 ? pool : this.taggedVideos;
-            if (availableTagged.length === 0) { this.positions[section] = 0; return; }
-            if (this.randomized) {
-                const roll = Math.random() * 100;
-                if (roll < this.percentChance || random) {
-                    const randomVideo = availableTagged[Math.floor(Math.random() * availableTagged.length)];
-                    this.positions[section] = randomVideo.id;
-                    return;
-                }
-            }
-            const videoIds = availableTagged.map((video) => video.id);
-            const currentIndex = videoIds.indexOf(this.positions[section]);
-            if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
-                this.positions[section] = videoIds[currentIndex + 1];
-            } else {
-                const nextVideo = availableTagged.find((v) => v.id > this.positions[section]);
-                this.positions[section] = nextVideo ? nextVideo.id : videoIds[0];
-            }
-            return;
-        }
-
-        // Untagged fallback (if no videos loaded from DB yet)
-        this.positions[section] = 0;
+        const nextId = this.computeNextVideoId(this.positions[section]);
+        this.positions[section] = nextId;
     }
 
     getVideoById(id: number): VideoWithRelations | null {

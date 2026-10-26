@@ -188,7 +188,10 @@ class Players {
         const frontPlayer = this.html.videoPlayers[frontIndex];
         const backPlayer = this.html.videoPlayers[backIndex];
 
-        let currentVideoId = await this.state.takeNextVideoId(section);
+        let currentVideoId = this.state.positions[section];
+        if (!currentVideoId || currentVideoId === 0) {
+            currentVideoId = await this.state.takeNextVideoId(section);
+        }
         let videoLoaded = false;
 
         while (currentVideoId !== 0) {
@@ -214,6 +217,8 @@ class Players {
         await this.playPlayer(frontPlayer, frontIndex);
         if (revision !== this.loadRevision) return false;
 
+        this.state.recordPlayedVideo(currentVideoId);
+
         const currentMetadata = await this.getVideoMetadata(currentVideoId, true);
         if (revision !== this.loadRevision) return false;
 
@@ -222,14 +227,14 @@ class Players {
         }
         this.populateMetadataForm(section, currentMetadata);
 
-        let nextVideoId = await this.state.takeNextVideoId(section);
+        let nextVideoId = this.state.peekNextQueuedVideoId(currentVideoId);
         while (nextVideoId !== 0) {
             this.queuePlayer(backPlayer, nextVideoId);
             const nextReady = await this.waitForVideoReady(backPlayer);
             if (nextReady) break;
             console.warn(`Queued video ${nextVideoId} could not be loaded by link. Trying next...`);
             this.state.markVideoAsPlayed(nextVideoId);
-            nextVideoId = await this.state.takeNextVideoId(section);
+            nextVideoId = this.state.computeNextVideoId(nextVideoId);
         }
 
         if (nextVideoId === 0) {
@@ -384,6 +389,43 @@ class Players {
         });
     }
 
+    private async navigateBack(section: SectionId = 1) {
+        if (!this.state.canGoBack()) {
+            console.log("No previous video in history");
+            return;
+        }
+
+        const prevVideoId = this.state.getPreviousVideoId();
+        if (!prevVideoId) return;
+
+        console.log(`↩ Navigating back to previous video: ${prevVideoId}`);
+
+        const [frontIndex, backIndex] = this.getSectionPlayerIndexes(section);
+        const activeIndex = this.state.active[frontIndex] ? frontIndex : backIndex;
+        const inactiveIndex = activeIndex === frontIndex ? backIndex : frontIndex;
+
+        const activePlayer = this.html.videoPlayers[activeIndex];
+        const inactivePlayer = this.html.videoPlayers[inactiveIndex];
+
+        // Configure and play previous video immediately on the current active surface
+        this.configurePlayer(activePlayer, prevVideoId, "auto");
+        await this.waitForVideoReady(activePlayer);
+        await this.playPlayer(activePlayer, activeIndex);
+        this.state.playing[activeIndex] = true;
+        this.updatePlayPauseIcon(true);
+
+        this.getVideoMetadata(prevVideoId)
+            .then((meta) => this.populateMetadataForm(section, meta))
+            .catch((err) => console.error(err));
+
+        // Pre-queue the video that comes after prevVideoId in history
+        const nextVideoId = this.state.peekNextQueuedVideoId(prevVideoId);
+        if (nextVideoId && nextVideoId !== 0) {
+            this.queuePlayer(inactivePlayer, nextVideoId);
+            void this.waitForVideoReady(inactivePlayer);
+        }
+    }
+
     private attachEventListeners() {
         const navLeft = document.getElementById('nav-left');
         const navCenter = document.getElementById('nav-center');
@@ -394,13 +436,10 @@ class Players {
         if (navLeft) {
             navLeft.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                this.state.isGoingBack = true;
                 navLeft.style.transition = 'transform 0.1s';
                 navLeft.style.transform = 'scale(0.85)';
                 setTimeout(() => navLeft.style.transform = 'scale(1)', 150);
-                await this.state.modifyPosition(1);
-                this.resetPlaybackSurface();
-                await this.loadVideos();
+                await this.navigateBack(1);
             });
         }
 
@@ -868,18 +907,20 @@ class Players {
             this.updatePlayPauseIcon(true);
             currentPlayer.pause();
 
+            this.state.recordPlayedVideo(nextVideoId);
+
             this.getVideoMetadata(nextVideoId)
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))
                 .catch((error) => { console.error("Failed to load next metadata:", error); });
 
-            let upcomingVideoId = await this.state.takeNextVideoId(section);
+            let upcomingVideoId = this.state.peekNextQueuedVideoId(nextVideoId);
             while (upcomingVideoId !== 0) {
                 this.queuePlayer(currentPlayer, upcomingVideoId);
                 const upcomingReady = await this.waitForVideoReady(currentPlayer);
                 if (upcomingReady) break;
                 console.warn(`Upcoming queued video ${upcomingVideoId} failed to load. Trying next...`);
                 this.state.markVideoAsPlayed(upcomingVideoId);
-                upcomingVideoId = await this.state.takeNextVideoId(section);
+                upcomingVideoId = this.state.computeNextVideoId(upcomingVideoId);
             }
 
             if (upcomingVideoId === 0) {
@@ -1172,6 +1213,7 @@ class Players {
 
         if (!reset) return;
 
+        this.state.resetHistory();
         this.showLoader();
         this.state.clearEmptyState();
         this.html.hideNoVideosBox();
@@ -1236,6 +1278,7 @@ class Players {
                 : "Loading videos..."
         );
 
+        this.state.resetHistory();
         this.state.state = normalizedMode;
         try {
             localStorage.setItem("clipflip_mode", normalizedMode);
