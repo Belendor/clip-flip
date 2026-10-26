@@ -922,7 +922,13 @@ class Players {
             this.removeTag.bind(this),
             async (tagTitle: string, tagId?: number) => {
                 const updated = await this.updateMeta(section, "tag", tagTitle, tagId);
-                await this.populateMetadataForm(section, updated);
+                if (updated) {
+                    if (tagTitle && !this.state.allTags.some((t) => t.title.toLowerCase() === tagTitle.toLowerCase())) {
+                        const newTagObj = updated.tags?.find((t) => t.title.toLowerCase() === tagTitle.toLowerCase()) || { id: tagId ?? 0, title: tagTitle };
+                        this.state.allTags.push(newTagObj);
+                    }
+                    await this.populateMetadataForm(section, updated);
+                }
             }
         );
     }

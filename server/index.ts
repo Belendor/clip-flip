@@ -176,11 +176,7 @@ app.post('/videos', async (req: Request, res: Response) => {
       let tagId = typeof tag === 'object' && tag.id ? Number(tag.id) : null;
       let tagTitle = typeof tag === 'object' ? (tag.title || tag.name) : (typeof tag === 'string' ? tag : null);
 
-      if (tagId && !isNaN(tagId) && tagId > 0) {
-        const tagConnectArray = [{ id: tagId }];
-        createData.tags = { connect: tagConnectArray };
-        updateData.tags = { connect: tagConnectArray };
-      } else if (tagTitle && typeof tagTitle === 'string' && tagTitle.trim()) {
+      if (tagTitle && typeof tagTitle === 'string' && tagTitle.trim()) {
         const cleanTitle = tagTitle.trim();
         const tagConnectOrCreate = [{
           where: { title: cleanTitle },
@@ -188,6 +184,10 @@ app.post('/videos', async (req: Request, res: Response) => {
         }];
         createData.tags = { connectOrCreate: tagConnectOrCreate };
         updateData.tags = { connectOrCreate: tagConnectOrCreate };
+      } else if (tagId && !isNaN(tagId) && tagId > 0) {
+        const tagConnectArray = [{ id: tagId }];
+        createData.tags = { connect: tagConnectArray };
+        updateData.tags = { connect: tagConnectArray };
       }
     }
 

@@ -170,7 +170,7 @@ export default class HTML {
             }
             button.setAttribute("aria-pressed", String(isActive));
 
-            if (index >= visibleCount) {
+            if (!this.state.advancedMode && index >= visibleCount) {
                 button.classList.add("hidden-tag", "hidden");
             }
 
@@ -204,7 +204,7 @@ export default class HTML {
             fragment.appendChild(button);
         });
 
-        if (tags.length > visibleCount) {
+        if (!this.state.advancedMode && tags.length > visibleCount) {
             const toggleButton = document.createElement("button");
             toggleButton.textContent = "...";
             toggleButton.className = "px-2 py-1 m-1 text-xs rounded-full bg-white/10 text-white hover:bg-white/30";
@@ -245,7 +245,20 @@ export default class HTML {
                 !cleanQuery || t.title.toLowerCase().includes(cleanQuery)
             );
 
-            if (matches.length === 0) {
+            const hasExactMatch = matches.some((t) => t.title.toLowerCase() === cleanQuery);
+            if (cleanQuery && !hasExactMatch) {
+                const addNewItem = document.createElement("div");
+                addNewItem.className = "tag-search-item font-semibold text-green-400";
+                addNewItem.textContent = `+ Add "${query.trim()}"`;
+                addNewItem.addEventListener("click", async (e) => {
+                    e.stopPropagation();
+                    popover.classList.add("hidden");
+                    await onAddTag(query.trim());
+                });
+                resultsDiv.appendChild(addNewItem);
+            }
+
+            if (matches.length === 0 && !cleanQuery) {
                 const emptyMsg = document.createElement("div");
                 emptyMsg.className = "text-xs text-gray-400 p-2 text-center";
                 emptyMsg.textContent = "No matching tags";
@@ -268,6 +281,32 @@ export default class HTML {
 
         filterInput.addEventListener("input", () => {
             void renderFilteredOptions(filterInput.value);
+        });
+
+        filterInput.addEventListener("keydown", async (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                const rawValue = filterInput.value.trim();
+                if (!rawValue) return;
+                const cleanQuery = rawValue.toLowerCase();
+                const exactMatch = this.state.allTags.find(
+                    (t) => t.title.toLowerCase() === cleanQuery
+                );
+                popover.classList.add("hidden");
+                if (exactMatch) {
+                    await onAddTag(exactMatch.title, exactMatch.id);
+                } else {
+                    const firstMatch = this.state.allTags.find(
+                        (t) => t.title.toLowerCase().includes(cleanQuery)
+                    );
+                    if (firstMatch) {
+                        await onAddTag(firstMatch.title, firstMatch.id);
+                    } else {
+                        await onAddTag(rawValue);
+                    }
+                }
+            }
         });
 
         addPill.addEventListener("click", async (e) => {
