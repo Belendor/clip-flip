@@ -42,7 +42,9 @@ interface TagMatch {
 
 interface GrokAnalysisResult {
     description: string;
-    matchedTags: TagMatch[];
+    bestTag?: TagMatch;
+    alternativeTags?: TagMatch[];
+    matchedTags?: TagMatch[];
     genderCombination?: string;
     suggestedNewTags?: string[];
 }
@@ -229,18 +231,23 @@ ALLOWED OFFICIAL CLIPFLIP TAGS (${officialTags.length} tags total):
 - BDSM & Other: ballbusting, bondage, boob job, cfnm, chastity, choking, cuckold, flaccid, groping, pain, slapping, snooping, strapon, swinger, tease and denial, teen, walking
 
 STRICT ENFORCEMENT RULES:
-1. Every tag placed in "matchedTags" MUST be chosen EXCLUSIVELY from the ALLOWED OFFICIAL CLIPFLIP TAGS list above.
-2. DO NOT invent, generate, or alter tag names in "matchedTags". Use the exact string as written (e.g. use "prone bone", not "prone"; use "big boobs", not "big breasts").
-3. Systematically evaluate each tag in the allowed list: if visible or actively happening, include it in "matchedTags" with confidence (1-100) and brief reason.
-4. If you observe something noteworthy in the scene that does NOT exist in our official tag list (such as "tattoo", "bedroom", "POV"), you MUST put it in "suggestedNewTags", NEVER in "matchedTags".
+1. SELECT THE SINGLE (#1) MOST FITTING TAG from the ALLOWED OFFICIAL CLIPFLIP TAGS list above that best defines the primary essence, position, or sexual action of this content (e.g. "prone bone", "blowjob", "creampie", "panties", etc.). Place this in "bestTag".
+2. DO NOT invent, generate, or alter tag names. Use the exact string as written in the list.
+3. List 2 to 4 runner-up official tags in "alternativeTags" ordered by relevance.
+4. If you observe something noteworthy in the scene that does NOT exist in our official tag list (such as "tattoo", "bedroom", "POV"), you MUST put it in "suggestedNewTags", NEVER in "bestTag".
 
 Output Format:
 You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw JSON), matching this structure:
 {
   "description": "Comprehensive description of scene, actions, progression, and details...",
   "genderCombination": "f+m",
-  "matchedTags": [
-    { "tag": "exact_official_tag_name", "confidence": 95, "reason": "Explanation of why this tag applies" }
+  "bestTag": {
+    "tag": "exact_official_tag_name",
+    "confidence": 98,
+    "reason": "Detailed explanation of why this single tag is the #1 most fitting choice above all others"
+  },
+  "alternativeTags": [
+    { "tag": "exact_official_tag_name", "confidence": 85, "reason": "Explanation" }
   ],
   "suggestedNewTags": ["any_extra_tags_not_in_official_list"]
 }`;
@@ -322,47 +329,59 @@ You MUST respond with valid JSON ONLY (inside \`\`\`json markdown fences or raw 
             };
         }
 
-        // ── Strictly validate and filter matchedTags against official tags ──
-        const validatedMatches: TagMatch[] = [];
-        const seenTags = new Set<string>();
-        const extraSuggested = new Set<string>(parsed.suggestedNewTags || []);
-
-        for (const m of parsed.matchedTags || []) {
-            if (!m || !m.tag) continue;
-            const cleaned = m.tag.toLowerCase().trim();
-            const canonical = officialMap.get(cleaned)
+        // ── Strictly validate and filter tags against official tags ──
+        const normalizeTag = (raw: string): string | null => {
+            if (!raw) return null;
+            const cleaned = raw.toLowerCase().trim();
+            return officialMap.get(cleaned)
                 || officialMap.get(cleaned.replace(/[\s\-_]+/g, ""))
                 || officialMap.get(cleaned.replace(/\s+/g, "-"))
-                || officialMap.get(cleaned.replace(/-/g, " "));
+                || officialMap.get(cleaned.replace(/-/g, " "))
+                || null;
+        };
 
+        const extraSuggested = new Set<string>(parsed.suggestedNewTags || []);
+        let validatedBestTag: TagMatch | null = null;
+
+        if (parsed.bestTag && parsed.bestTag.tag) {
+            const canonical = normalizeTag(parsed.bestTag.tag);
+            if (canonical) {
+                validatedBestTag = {
+                    tag: canonical,
+                    confidence: Math.min(100, Math.max(1, parsed.bestTag.confidence || 95)),
+                    reason: parsed.bestTag.reason || "Top matching official tag"
+                };
+            } else {
+                extraSuggested.add(parsed.bestTag.tag);
+            }
+        }
+
+        const validatedAlternatives: TagMatch[] = [];
+        const seenTags = new Set<string>();
+        if (validatedBestTag) seenTags.add(validatedBestTag.tag);
+
+        const rawList = [...(parsed.alternativeTags || []), ...(parsed.matchedTags || [])];
+        for (const m of rawList) {
+            if (!m || !m.tag) continue;
+            const canonical = normalizeTag(m.tag);
             if (canonical && !seenTags.has(canonical)) {
                 seenTags.add(canonical);
-                validatedMatches.push({
+                validatedAlternatives.push({
                     tag: canonical,
                     confidence: Math.min(100, Math.max(1, m.confidence || 80)),
-                    reason: m.reason || "Detected in visual media"
+                    reason: m.reason || "Alternative matching official tag"
                 });
             } else if (!canonical) {
-                // If tag was NOT in the official list, move to suggestedNewTags
                 extraSuggested.add(m.tag);
             }
         }
 
-        // Include gender combination if it is an official tag and not already added
-        if (parsed.genderCombination) {
-            const gcClean = parsed.genderCombination.toLowerCase().trim();
-            const gcCanonical = officialMap.get(gcClean);
-            if (gcCanonical && !seenTags.has(gcCanonical)) {
-                seenTags.add(gcCanonical);
-                validatedMatches.unshift({
-                    tag: gcCanonical,
-                    confidence: 98,
-                    reason: `Identified participants: ${gcCanonical}`
-                });
-            }
+        if (!validatedBestTag && validatedAlternatives.length > 0) {
+            validatedBestTag = validatedAlternatives.shift()!;
         }
 
-        parsed.matchedTags = validatedMatches;
+        parsed.bestTag = validatedBestTag || undefined;
+        parsed.alternativeTags = validatedAlternatives;
         parsed.suggestedNewTags = Array.from(extraSuggested);
         return parsed;
     } finally {
@@ -409,22 +428,26 @@ async function main() {
     }
 
     console.log("\n───────────────────────────────────────────────────────");
-    console.log("🎯 MATCHED OFFICIAL CLIPFLIP TAGS:");
+    console.log("⭐ SINGLE #1 MOST FITTING TAG FROM DATABASE:");
     console.log("───────────────────────────────────────────────────────");
 
-    if (!result.matchedTags || result.matchedTags.length === 0) {
-        console.log("No official tags matched with sufficient confidence.");
+    if (result.bestTag) {
+        console.log(`\n  \x1b[32m\x1b[1m▶  TAG: [ ${result.bestTag.tag.toUpperCase()} ]\x1b[0m (${result.bestTag.confidence}% confidence)`);
+        console.log(`     Why: ${result.bestTag.reason}`);
+        console.log(`\n  📋 Copy tag: \x1b[36m\x1b[1m${result.bestTag.tag}\x1b[0m\n`);
     } else {
-        result.matchedTags.sort((a, b) => b.confidence - a.confidence);
+        console.log("No single official tag matched with sufficient confidence.");
+    }
 
-        for (const match of result.matchedTags) {
-            const barLength = Math.round(match.confidence / 10);
+    if (result.alternativeTags && result.alternativeTags.length > 0) {
+        console.log("───────────────────────────────────────────────────────");
+        console.log("🥈 RUNNER-UP / ALTERNATIVE OFFICIAL TAGS:");
+        console.log("───────────────────────────────────────────────────────");
+        for (const alt of result.alternativeTags) {
+            const barLength = Math.round(alt.confidence / 10);
             const bar = "█".repeat(barLength) + "░".repeat(10 - barLength);
-            console.log(`  • \x1b[32m\x1b[1m${match.tag.padEnd(20)}\x1b[0m [${bar}] ${match.confidence}% - ${match.reason}`);
+            console.log(`  • \x1b[33m${alt.tag.padEnd(20)}\x1b[0m [${bar}] ${alt.confidence}% - ${alt.reason}`);
         }
-
-        const tagList = result.matchedTags.map((t) => t.tag).join(", ");
-        console.log(`\n📋 Tag list (copy-ready): \x1b[36m${tagList}\x1b[0m`);
     }
 
     if (result.suggestedNewTags && result.suggestedNewTags.length > 0) {
