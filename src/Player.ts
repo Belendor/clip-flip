@@ -113,13 +113,29 @@ class Players {
         const frontPlayer = this.html.videoPlayers[frontIndex];
         const backPlayer = this.html.videoPlayers[backIndex];
 
-        const currentVideoId = await this.state.takeNextVideoId(section);
-        if (currentVideoId === 0) { this.state.markEmpty(); return false; }
+        let currentVideoId = await this.state.takeNextVideoId(section);
+        let videoLoaded = false;
 
-        this.configurePlayer(frontPlayer, currentVideoId, "auto");
-        if (revision !== this.loadRevision) return false;
+        while (currentVideoId !== 0) {
+            this.configurePlayer(frontPlayer, currentVideoId, "auto");
+            if (revision !== this.loadRevision) return false;
 
-        await this.waitForVideoReady(frontPlayer);
+            const ready = await this.waitForVideoReady(frontPlayer);
+            if (ready) {
+                videoLoaded = true;
+                break;
+            }
+
+            console.warn(`Video ${currentVideoId} could not be loaded by link (404 or error). Trying next video...`);
+            this.state.markVideoAsPlayed(currentVideoId);
+            currentVideoId = await this.state.takeNextVideoId(section);
+        }
+
+        if (!videoLoaded || currentVideoId === 0) {
+            this.state.markEmpty();
+            return false;
+        }
+
         await this.playPlayer(frontPlayer, frontIndex);
         if (revision !== this.loadRevision) return false;
 
@@ -127,14 +143,21 @@ class Players {
         if (revision !== this.loadRevision) return false;
 
         if (this.state.adminMode && currentMetadata?.reactions?.length) {
-            if (currentMetadata?.reactions?.length > 0) { this.loadSection(section, revision); return false; }
+            if (currentMetadata?.reactions?.length > 0) { return this.loadSection(section, revision); }
         }
         this.populateMetadataForm(section, currentMetadata);
 
-        const nextVideoId = await this.state.takeNextVideoId(section);
-        if (nextVideoId !== 0) {
+        let nextVideoId = await this.state.takeNextVideoId(section);
+        while (nextVideoId !== 0) {
             this.queuePlayer(backPlayer, nextVideoId);
-        } else {
+            const nextReady = await this.waitForVideoReady(backPlayer);
+            if (nextReady) break;
+            console.warn(`Queued video ${nextVideoId} could not be loaded by link. Trying next...`);
+            this.state.markVideoAsPlayed(nextVideoId);
+            nextVideoId = await this.state.takeNextVideoId(section);
+        }
+
+        if (nextVideoId === 0) {
             this.resetPlayer(backPlayer);
         }
 
@@ -510,6 +533,13 @@ class Players {
             player.addEventListener("ended", () => { this.handlePlayerEnded(index as PlayerIndex); });
             player.addEventListener("click", () => { this.togglePlayPause(index as PlayerIndex); });
             player.addEventListener("dblclick", () => { void this.toggleFullscreen(); });
+            player.addEventListener("error", () => {
+                const videoId = this.getPlayerVideoId(player);
+                console.warn(`Player ${index} (videoId ${videoId}) error:`, player.error);
+                if (this.state.active[index as PlayerIndex]) {
+                    void this.handlePlayerEnded(index as PlayerIndex);
+                }
+            });
         });
     }
 
@@ -576,10 +606,11 @@ class Players {
 
     private async waitForVideoReady(video: HTMLVideoElement): Promise<boolean> {
         if (!this.getPlayerVideoId(video)) return false;
+        if (video.error) return false;
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return true;
 
         return new Promise<boolean>((resolve) => {
-            const timeout = window.setTimeout(() => { cleanup(false); }, 8000);
+            const timeout = window.setTimeout(() => { cleanup(false); }, 4000);
             const cleanup = (result: boolean) => {
                 window.clearTimeout(timeout);
                 video.removeEventListener("canplay", handleReady);
@@ -618,23 +649,54 @@ class Players {
 
             if (finishedVideoId) this.state.markVideoAsPlayed(finishedVideoId);
 
-            const nextVideoId = this.getPlayerVideoId(nextPlayer);
-            if (!nextVideoId) { this.state.markEmpty(); return; }
+            let nextVideoId = this.getPlayerVideoId(nextPlayer);
+            let ready = false;
 
-            await this.waitForVideoReady(nextPlayer);
+            if (nextVideoId) {
+                ready = await this.waitForVideoReady(nextPlayer);
+            }
+
+            while (!ready) {
+                if (nextVideoId) {
+                    console.warn(`Video ${nextVideoId} failed to load by link, trying next video...`);
+                    this.state.markVideoAsPlayed(nextVideoId);
+                }
+                nextVideoId = await this.state.takeNextVideoId(section);
+                if (nextVideoId === 0) {
+                    this.state.markEmpty();
+                    this.showNoVideosBox();
+                    return;
+                }
+                this.configurePlayer(nextPlayer, nextVideoId, "auto");
+                ready = await this.waitForVideoReady(nextPlayer);
+            }
+
             await this.playPlayer(nextPlayer, nextIndex);
             this.setSectionActivePlayer(section, nextIndex);
+            this.state.playing[nextIndex] = true;
+            this.updatePlayPauseIcon(true);
             currentPlayer.pause();
 
             this.getVideoMetadata(nextVideoId)
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))
                 .catch((error) => { console.error("Failed to load next metadata:", error); });
 
-            const queuedVideoId = await this.state.takeNextVideoId(section);
-            if (queuedVideoId === 0) this.resetPlayer(currentPlayer);
-            else await this.queuePlayer(currentPlayer, queuedVideoId);
+            let upcomingVideoId = await this.state.takeNextVideoId(section);
+            while (upcomingVideoId !== 0) {
+                this.queuePlayer(currentPlayer, upcomingVideoId);
+                const upcomingReady = await this.waitForVideoReady(currentPlayer);
+                if (upcomingReady) break;
+                console.warn(`Upcoming queued video ${upcomingVideoId} failed to load. Trying next...`);
+                this.state.markVideoAsPlayed(upcomingVideoId);
+                upcomingVideoId = await this.state.takeNextVideoId(section);
+            }
+
+            if (upcomingVideoId === 0) {
+                this.resetPlayer(currentPlayer);
+            }
         } catch (error) {
             console.error("Error during player swap:", error);
+            this.showNoVideosBox();
         } finally {
             this.pendingSwap[section] = false;
         }
@@ -802,6 +864,14 @@ class Players {
         const resetBtn = resetWrapper?.querySelector("#reset-btn") as HTMLButtonElement | null;
 
         if (!box || !tagsBox || !resetWrapper || !resetInfo || !resetBtn) return;
+
+        // Ensure primary metadata form remains visible on top so user can switch tabs
+        const metaForm1 = document.getElementById("metaForm1");
+        if (metaForm1) {
+            this.html.metadata.metaVisible[1] = true;
+            this.html.metadata.setMetadataVisibility(metaForm1, true);
+            this.html.updateMetadataButton(true);
+        }
 
         tagsBox.innerHTML = "";
         const activeTagList = this.state.activeTags.get(1) ?? [];
