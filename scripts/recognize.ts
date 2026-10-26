@@ -133,7 +133,7 @@ async function analyzeWithGrok(imagePath: string, officialTags: ProdTag[]): Prom
         process.exit(1);
     }
 
-    const model = process.env.GROK_MODEL || "grok-2-vision-1212";
+    const model = process.env.GROK_MODEL || "grok-4.20-non-reasoning";
     const mimeType = getMimeType(imagePath);
     const imageBuffer = fs.readFileSync(imagePath);
     const base64Data = imageBuffer.toString("base64");
