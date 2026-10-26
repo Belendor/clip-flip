@@ -400,11 +400,19 @@ app.get("/videos", async (req: Request, res: Response) => {
       likes,
       dislikes,
       myReaction,
-      reactions: undefined,
+      reactions: video.reactions,
     };
   });
 
   if (sort === "liked" || sort === "favorite" || sort === "favorites") {
+    const targetUserId = Number(req.query.userId) || userId;
+    if (targetUserId) {
+      const userLiked = mappedVideos.filter((v) =>
+        v.reactions?.some((r: any) => r.userId === targetUserId && r.type === "like")
+      );
+      userLiked.sort((a, b) => a.id - b.id);
+      return res.json(userLiked);
+    }
     const likedOnly = mappedVideos.filter((v) => v.likes > 0);
     likedOnly.sort((a, b) => {
       if (b.likes !== a.likes) {
@@ -416,12 +424,14 @@ app.get("/videos", async (req: Request, res: Response) => {
   }
 
   if (sort === "trending" || sort === "likes" || sort === "rating") {
-    mappedVideos.sort((a, b) => {
+    const trendingOnly = mappedVideos.filter((v) => v.likes > 0);
+    trendingOnly.sort((a, b) => {
       if (b.likes !== a.likes) {
         return b.likes - a.likes;
       }
       return a.id - b.id;
     });
+    return res.json(trendingOnly);
   }
 
   res.json(mappedVideos);
@@ -1172,18 +1182,38 @@ app.get("/videos/favorites/:userId", async (req: Request, res: Response) => {
         reactions: {
           some: {
             userId,
+            type: "like",
           },
         },
       },
       include: {
         tags: true,
+        models: true,
+        reactions: {
+          select: {
+            userId: true,
+            type: true,
+          },
+        },
       },
       orderBy: {
-        id: "desc",
+        id: "asc",
       },
     });
 
-    res.json(videos);
+    const mappedVideos = videos.map((video) => {
+      const likes = video.reactions.filter((r) => r.type === "like").length;
+      const dislikes = video.reactions.filter((r) => r.type === "dislike").length;
+      return {
+        ...video,
+        likes,
+        dislikes,
+        myReaction: "like",
+        reactions: video.reactions,
+      };
+    });
+
+    res.json(mappedVideos);
   } catch (error) {
     console.error(error);
     res.status(500).json({

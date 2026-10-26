@@ -68,7 +68,7 @@ class Players {
             await this.state.fetchTrendingVideos();
         } else if (this.state.state === "liked") {
             this.state.randomized = false;
-            await this.state.fetchLikedVideos();
+            await this.state.fetchLikedVideos(this.user.getId());
         } else if (this.state.state === "new") {
             this.state.randomized = false;
             await this.state.fetchNewVideos();
@@ -1120,7 +1120,7 @@ class Players {
                 break;
             case "liked":
                 this.state.randomized = false;
-                await this.state.fetchLikedVideos();
+                await this.state.fetchLikedVideos(this.user.getId());
                 break;
             case "new":
                 this.state.randomized = false;

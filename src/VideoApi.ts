@@ -27,8 +27,8 @@ export default class VideoApi {
         });
     }
 
-    async fetchLikedVideos(userId: number): Promise<NewVideo[]> {
-        return this.request<NewVideo[]>(`/videos/favorites/${userId}`, {
+    async fetchLikedVideos(userId: number): Promise<VideoWithRelations[]> {
+        return this.request<VideoWithRelations[]>(`/videos/favorites/${userId}`, {
             method: "GET",
             headers: { "Content-Type": "application/json" },
         });

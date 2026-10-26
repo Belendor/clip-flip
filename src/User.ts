@@ -31,8 +31,13 @@ export default class User {
         }
     }
 
-    getId() {
-        return this.currentUser?.id;
+    getId(): number | undefined {
+        if (this.currentUser?.id) return this.currentUser.id;
+        try {
+            const saved = localStorage.getItem("clipflip_user_id");
+            if (saved) return Number(saved);
+        } catch (_) {}
+        return undefined;
     }
 
     async checkAuth() {
@@ -42,9 +47,13 @@ export default class User {
             });
             if (!res.ok) return;
             const data = await res.json();
-            if (data.loggedIn) {
+            if (data.loggedIn && data.user) {
                 this.currentUser = data.user;
+                try { localStorage.setItem("clipflip_user_id", String(data.user.id)); } catch (_) {}
                 this.onAuthChange?.(this.currentUser);
+            } else {
+                this.currentUser = null;
+                try { localStorage.removeItem("clipflip_user_id"); } catch (_) {}
             }
         } catch (error) {
             console.warn("Failed to check auth status:", error);
@@ -199,6 +208,7 @@ export default class User {
             }
 
             this.currentUser = data.user;
+            try { localStorage.setItem("clipflip_user_id", String(data.user.id)); } catch (_) {}
             this.renderUser();
             this.onAuthChange?.(this.currentUser);
         } catch (err) {
@@ -319,6 +329,7 @@ export default class User {
             console.warn("Logout error:", err);
         }
         this.currentUser = null;
+        try { localStorage.removeItem("clipflip_user_id"); } catch (_) {}
         this.onAuthChange?.(null);
         await this.renderGoogleButton();
     }
