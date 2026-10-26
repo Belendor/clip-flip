@@ -21,6 +21,7 @@ const thumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/thumbnails/` : "/thumbnails/
 const videoThumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/thumbnail/videos/` : "/thumbnail/videos/";
 
 export const config = {
+    isLocal:             isLocal,
     baseUrl:             prodDomain,
     videoSourcePath:     videoPath,
     videoSourcePath2:    videoPath1,
