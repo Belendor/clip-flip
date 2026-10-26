@@ -15,6 +15,7 @@ class Players {
     private muted = true;
     private volume = 0.5;
     private searchAbortController: AbortController | null = null;
+    private isTogglingPlay = false;
 
     constructor(
         private readonly state: State,
@@ -64,19 +65,13 @@ class Players {
 
         if (this.state.state === "trending") {
             this.state.randomized = false;
-            if (!this.state.trendingVideos || this.state.trendingVideos.length === 0) {
-                await this.state.fetchTrendingVideos();
-            }
+            await this.state.fetchTrendingVideos();
         } else if (this.state.state === "liked") {
             this.state.randomized = false;
-            if (!this.state.likedVideos || this.state.likedVideos.length === 0) {
-                await this.state.fetchLikedVideos();
-            }
+            await this.state.fetchLikedVideos();
         } else if (this.state.state === "new") {
             this.state.randomized = false;
-            if (!this.state.newVideos || this.state.newVideos.length === 0) {
-                await this.state.fetchNewVideos();
-            }
+            await this.state.fetchNewVideos();
         }
 
         if (hasCache) {
@@ -118,6 +113,20 @@ class Players {
         const front = ((section - 1) * 2) as PlayerIndex;
         const back = (front + 1) as PlayerIndex;
         return [front, back];
+    }
+
+    private getVisibleActivePlayerIndexes(): PlayerIndex[] {
+        const sections = this.getVisibleSections();
+        const indexes: PlayerIndex[] = [];
+        for (const section of sections) {
+            const [front, back] = this.getSectionPlayerIndexes(section);
+            const activeIdx = this.state.active[front] ? front : back;
+            const player = this.html.videoPlayers[activeIdx];
+            if (player && (player.src || this.getPlayerVideoId(player))) {
+                indexes.push(activeIdx);
+            }
+        }
+        return indexes.length > 0 ? indexes : [0];
     }
 
     private resetPlaybackSurface() {
@@ -351,7 +360,8 @@ class Players {
         const videoBack = document.getElementById('v1-back') as HTMLVideoElement | null;
 
         if (navLeft) {
-            navLeft.addEventListener('click', async () => {
+            navLeft.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 this.state.isGoingBack = true;
                 navLeft.style.transition = 'transform 0.1s';
                 navLeft.style.transform = 'scale(0.85)';
@@ -363,7 +373,8 @@ class Players {
         }
 
         if (navCenter && videoFront && videoBack) {
-            navCenter.addEventListener('click', () => {
+            navCenter.addEventListener('click', (e) => {
+                e.stopPropagation();
                 navCenter.style.transition = 'transform 0.1s';
                 navCenter.style.transform = 'scale(0.85)';
                 setTimeout(() => navCenter.style.transform = 'scale(1)', 150);
@@ -372,7 +383,8 @@ class Players {
         }
 
         if (navRight) {
-            navRight.addEventListener('click', () => {
+            navRight.addEventListener('click', (e) => {
+                e.stopPropagation();
                 navRight.style.transition = 'transform 0.1s';
                 navRight.style.transform = 'scale(0.85)';
                 setTimeout(() => navRight.style.transform = 'scale(1)', 150);
@@ -388,9 +400,11 @@ class Players {
         });
 
         this.html.playPauseBtn.addEventListener("click", async () => {
-            const activeIndexes = Object.keys(this.state.active)
-                .map(Number)
-                .filter((index) => this.state.active[index as PlayerIndex]) as PlayerIndex[];
+            if (this.isTogglingPlay) return;
+            this.isTogglingPlay = true;
+            setTimeout(() => { this.isTogglingPlay = false; }, 200);
+
+            const activeIndexes = this.getVisibleActivePlayerIndexes();
             if (activeIndexes.length === 0) return;
             const anyPlaying = activeIndexes.some((index) => {
                 const player = this.html.videoPlayers[index];
@@ -580,7 +594,6 @@ class Players {
                     searchInput.blur();
                     e.preventDefault();
                     e.stopPropagation();
-                    e.stopImmediatePropagation();
                 }
             },
             true
@@ -607,7 +620,13 @@ class Players {
     private attachPlayerListeners() {
         this.html.videoPlayers.forEach((player, index) => {
             player.addEventListener("ended", () => { this.handlePlayerEnded(index as PlayerIndex); });
-            player.addEventListener("click", () => { this.togglePlayPause(index as PlayerIndex); });
+            player.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (this.isTogglingPlay) return;
+                this.isTogglingPlay = true;
+                setTimeout(() => { this.isTogglingPlay = false; }, 200);
+                this.togglePlayPause(index as PlayerIndex);
+            });
             player.addEventListener("dblclick", () => { void this.toggleFullscreen(); });
             player.addEventListener("play", () => {
                 this.state.playing[index as PlayerIndex] = true;
@@ -615,9 +634,7 @@ class Players {
             });
             player.addEventListener("pause", () => {
                 this.state.playing[index as PlayerIndex] = false;
-                const anyActivePlaying = Object.keys(this.state.active)
-                    .map(Number)
-                    .filter((i) => this.state.active[i as PlayerIndex])
+                const anyActivePlaying = this.getVisibleActivePlayerIndexes()
                     .some((i) => !this.html.videoPlayers[i].paused);
                 this.updatePlayPauseIcon(anyActivePlaying);
             });
@@ -805,7 +822,7 @@ class Players {
 
     private async togglePlayPause(index: PlayerIndex, multi = false): Promise<void> {
         const player = this.html.videoPlayers[index];
-        if (!player) return;
+        if (!player || (!player.src && !this.getPlayerVideoId(player))) return;
         if (!player.paused) {
             player.pause();
             this.state.playing[index] = false;

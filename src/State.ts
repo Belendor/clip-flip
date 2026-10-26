@@ -467,19 +467,19 @@ class State {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
                     if (likesB !== likesA) return likesB - likesA;
-                    return b.id - a.id;
+                    return a.id - b.id;
                 });
                 const unwatched = sorted.filter(video => !this.played.has(video.id));
                 this.trendingVideos = unwatched;
                 this.randomized = false;
-                if (!this.positions[1] || this.positions[1] === 0) {
-                    this.positions = {
-                        1: unwatched[0]?.id || 0,
-                        2: unwatched[0]?.id || 0,
-                        3: unwatched[0]?.id || 0,
-                        4: unwatched[0]?.id || 0,
-                    };
-                }
+                const topVideo = unwatched.length > 0 ? unwatched[0] : sorted[0];
+                const topId = topVideo ? topVideo.id : 0;
+                this.positions = {
+                    1: topId,
+                    2: topId,
+                    3: topId,
+                    4: topId,
+                };
             }
         } catch (error) {
             console.error("Failed to fetch trending videos:", error);

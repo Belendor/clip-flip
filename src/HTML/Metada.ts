@@ -81,6 +81,7 @@ export default class Metadata {
             initialTop = rect.top;
 
             element.style.position = "fixed";
+            element.style.zIndex = "40";
             element.style.left = `${initialLeft}px`;
             element.style.top = `${initialTop}px`;
             element.style.bottom = "auto";
