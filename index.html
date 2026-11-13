@@ -152,6 +152,78 @@
             display: none !important;
         }
 
+        .metadata-form.compact-multisection {
+            z-index: 50 !important;
+            position: absolute !important;
+            left: 10px !important;
+            bottom: 10px !important;
+            top: auto !important;
+            right: auto !important;
+            width: auto !important;
+            max-width: calc(100% - 20px) !important;
+            max-height: 120px !important;
+            min-width: 0 !important;
+            padding: 6px 10px !important;
+            background: rgba(10, 14, 26, 0.88) !important;
+            backdrop-filter: blur(14px) saturate(140%) !important;
+            -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(255, 255, 255, 0.22) !important;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 0, 0, 0.4) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+            display: block !important;
+            pointer-events: auto !important;
+            cursor: default;
+        }
+
+        .metadata-form.compact-multisection.hidden {
+            display: none !important;
+        }
+
+        .metadata-form.compact-multisection .compact-tag-list {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 4px !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        .metadata-form.compact-multisection .compact-tag-list .tag-button {
+            font-size: 0.72rem !important;
+            font-weight: 500 !important;
+            padding: 3px 8px !important;
+            height: auto !important;
+            min-height: 22px !important;
+            border-radius: 6px !important;
+            line-height: 1.25 !important;
+            background: rgba(255, 255, 255, 0.16) !important;
+            border: 1px solid rgba(255, 255, 255, 0.22) !important;
+            color: #f8fafc !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+            transition: all 0.15s ease !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+        }
+
+        .metadata-form.compact-multisection .compact-tag-list .tag-button:hover {
+            background: rgba(255, 255, 255, 0.28) !important;
+            border-color: rgba(56, 189, 248, 0.6) !important;
+            color: #ffffff !important;
+            transform: translateY(-1px);
+        }
+
+        .metadata-form.compact-multisection .compact-tag-list .tag-button.active-tag {
+            background: linear-gradient(135deg, #059669, #10b981) !important;
+            border-color: #34d399 !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.6) !important;
+        }
+
         .metadata-form::-webkit-scrollbar {
             display: none;
             width: 0;

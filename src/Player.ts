@@ -268,14 +268,14 @@ class Players {
         }
         this.populateMetadataForm(section, currentMetadata);
 
-        let nextVideoId = this.state.peekNextQueuedVideoId(currentVideoId);
+        let nextVideoId = this.state.peekNextQueuedVideoId(currentVideoId, section);
         while (nextVideoId !== 0) {
             this.queuePlayer(backPlayer, nextVideoId);
             const nextReady = await this.waitForVideoReady(backPlayer);
             if (nextReady) break;
             console.warn(`Queued video ${nextVideoId} could not be loaded by link. Trying next...`);
             this.state.markVideoAsPlayed(nextVideoId);
-            nextVideoId = this.state.computeNextVideoId(nextVideoId);
+            nextVideoId = this.state.computeNextVideoId(nextVideoId, section);
         }
 
         if (nextVideoId === 0) {
@@ -460,7 +460,7 @@ class Players {
             .catch((err) => console.error(err));
 
         // Pre-queue the video that comes after prevVideoId in history
-        const nextVideoId = this.state.peekNextQueuedVideoId(prevVideoId);
+        const nextVideoId = this.state.peekNextQueuedVideoId(prevVideoId, section);
         if (nextVideoId && nextVideoId !== 0) {
             this.queuePlayer(inactivePlayer, nextVideoId);
             void this.waitForVideoReady(inactivePlayer);
@@ -954,14 +954,14 @@ class Players {
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))
                 .catch((error) => { console.error("Failed to load next metadata:", error); });
 
-            let upcomingVideoId = this.state.peekNextQueuedVideoId(nextVideoId);
+            let upcomingVideoId = this.state.peekNextQueuedVideoId(nextVideoId, section);
             while (upcomingVideoId !== 0) {
                 this.queuePlayer(currentPlayer, upcomingVideoId);
                 const upcomingReady = await this.waitForVideoReady(currentPlayer);
                 if (upcomingReady) break;
                 console.warn(`Upcoming queued video ${upcomingVideoId} failed to load. Trying next...`);
                 this.state.markVideoAsPlayed(upcomingVideoId);
-                upcomingVideoId = this.state.computeNextVideoId(upcomingVideoId);
+                upcomingVideoId = this.state.computeNextVideoId(upcomingVideoId, section);
             }
 
             if (upcomingVideoId === 0) {
@@ -1073,7 +1073,7 @@ class Players {
 
         await this.html.renderTags(
             tagsWrapper, safeTags, section, video.id,
-            this.toggleTag.bind(this),
+            (tag: string, _active: boolean, s?: SectionId) => this.toggleTag(tag, true, s ?? section),
             this.removeTag.bind(this),
             async (tagTitle: string, tagId?: number) => {
                 const updated = await this.updateMeta(section, "tag", tagTitle, tagId);
@@ -1126,9 +1126,13 @@ class Players {
     }
 
     private async tryPreserveCurrentVideoOnTagChange(section: SectionId): Promise<boolean> {
-        if (this.state.taggedVideos == null) return false;
         const activeTags = this.state.activeTags.get(section) ?? [];
         if (activeTags.length === 0) return false;
+
+        const pool = this.state.multiSection
+            ? (this.state.taggedVideosBySection.get(section) ?? this.state.taggedVideos)
+            : this.state.taggedVideos;
+        if (!pool || pool.length === 0) return false;
 
         const activeIndex = this.getActiveIndexForSection(section);
         const currentPlayer = this.html.videoPlayers[activeIndex];
@@ -1147,7 +1151,7 @@ class Players {
         const inactivePlayer = this.html.videoPlayers[inactiveIndex];
         const played = this.state.getPlayedVideos();
 
-        const queuedCandidates = this.state.taggedVideos
+        const queuedCandidates = pool
             .map((video) => video.id)
             .filter((id) => id !== currentVideoId && !played.has(id));
 
@@ -1231,40 +1235,78 @@ class Players {
         box.removeAttribute("hidden");
     }
 
-    async toggleTag(tag: string, reset = true): Promise<void> {
-        this.state.activeTags.forEach((currentTags, sectionId) => {
+    async toggleTag(tag: string, reset = true, targetSection?: SectionId): Promise<void> {
+        const section: SectionId = (this.state.multiSection && targetSection) ? targetSection : 1;
+
+        if (this.state.multiSection) {
+            // ONLY toggle for this specific screen/section
+            const currentTags = this.state.activeTags.get(section) || [];
             const index = currentTags.indexOf(tag);
-            if (index >= 0) currentTags.splice(index, 1);
-            else currentTags.push(tag);
-        });
+            if (index >= 0) {
+                currentTags.splice(index, 1);
+            } else {
+                currentTags.push(tag);
+            }
+            this.state.activeTags.set(section, currentTags);
 
-        document.querySelectorAll<HTMLButtonElement>(".tag-button").forEach((btn) => {
-            const btnTag = btn.dataset.tag;
-            const btnSection = (Number(btn.dataset.section) || 1) as SectionId;
-            const isActive = !!btnTag && (this.state.activeTags.get(btnSection)?.includes(btnTag) ?? false);
-            btn.classList.toggle("active-tag", isActive);
-            btn.setAttribute("aria-pressed", String(isActive));
-        });
+            // Update active styles ONLY for tag buttons in this section
+            document.querySelectorAll<HTMLButtonElement>(`.tag-button.section-tag-${section}`).forEach((btn) => {
+                const btnTag = btn.dataset.tag;
+                const isActive = !!btnTag && (this.state.activeTags.get(section)?.includes(btnTag) ?? false);
+                btn.classList.toggle("active-tag", isActive);
+                btn.setAttribute("aria-pressed", String(isActive));
+            });
 
-        document.querySelectorAll<HTMLElement>(".tag-card").forEach((card) => {
-            const cardTag = card.dataset.tag;
-            const isActive = !!cardTag && (this.state.activeTags.get(1)?.includes(cardTag) ?? false);
-            card.classList.toggle("active-tag", isActive);
-        });
+            if (!reset) return;
 
-        if (!reset) return;
+            this.metadataCache.clear();
+            await this.state.fetchVideosByTags(section);
 
-        this.state.resetHistory();
-        this.showLoader();
-        this.state.clearEmptyState();
-        this.html.hideNoVideosBox();
-        this.metadataCache.clear();
-        await this.state.fetchVideosByTags(1);
-        if (await this.tryPreserveCurrentVideoOnTagChange(1)) {
-            this.hideLoader();
-            return;
+            if (await this.tryPreserveCurrentVideoOnTagChange(section)) {
+                return;
+            }
+
+            // Only reload the targeted section!
+            await this.loadSection(section, ++this.loadRevision);
+        } else {
+            // Single-screen mode: toggle for section 1
+            const currentTags = this.state.activeTags.get(1) || [];
+            const index = currentTags.indexOf(tag);
+            if (index >= 0) {
+                currentTags.splice(index, 1);
+            } else {
+                currentTags.push(tag);
+            }
+            this.state.activeTags.set(1, currentTags);
+
+            document.querySelectorAll<HTMLButtonElement>(".tag-button").forEach((btn) => {
+                const btnTag = btn.dataset.tag;
+                const btnSection = (Number(btn.dataset.section) || 1) as SectionId;
+                const isActive = !!btnTag && (this.state.activeTags.get(btnSection)?.includes(btnTag) ?? false);
+                btn.classList.toggle("active-tag", isActive);
+                btn.setAttribute("aria-pressed", String(isActive));
+            });
+
+            document.querySelectorAll<HTMLElement>(".tag-card").forEach((card) => {
+                const cardTag = card.dataset.tag;
+                const isActive = !!cardTag && (this.state.activeTags.get(1)?.includes(cardTag) ?? false);
+                card.classList.toggle("active-tag", isActive);
+            });
+
+            if (!reset) return;
+
+            this.state.resetHistory();
+            this.showLoader();
+            this.state.clearEmptyState();
+            this.html.hideNoVideosBox();
+            this.metadataCache.clear();
+            await this.state.fetchVideosByTags(1);
+            if (await this.tryPreserveCurrentVideoOnTagChange(1)) {
+                this.hideLoader();
+                return;
+            }
+            await this.loadVideos();
         }
-        await this.loadVideos();
     }
 
     async fetchVideos(query?: string): Promise<Video[]> {

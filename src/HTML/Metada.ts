@@ -48,10 +48,19 @@ export default class Metadata {
             3: this.state.multiSection,
             4: this.state.multiSection,
         };
-        this.state.sectionIds.forEach((section) => {
-            if (!this.state.multiSection && section !== 1) return;
+        const allSections: SectionId[] = [1, 2, 3, 4];
+        allSections.forEach((section) => {
+            if (!this.state.multiSection && section !== 1) {
+                const f = document.getElementById(`metaForm${section}`) as HTMLDivElement | null;
+                if (f) {
+                    f.className = "metadata-form hidden";
+                    f.removeAttribute("style");
+                    f.replaceChildren();
+                }
+                return;
+            }
             const sectionElement = document.getElementById(`section-${section}`);
-            if (!sectionElement) throw new Error(`Section element for section ${section} not found`);
+            if (!sectionElement) return;
             this.createMetadataForm(section);
         });
         this.html.updateMetadataButton(true);
@@ -137,10 +146,7 @@ export default class Metadata {
         // In multisection mode, render an ultra-compact tags-only overlay for each video
         if (this.state.multiSection) {
             form.className = "metadata-form compact-multisection";
-            form.style.left = "";
-            form.style.top = "";
-            form.style.bottom = "";
-            form.style.right = "";
+            form.removeAttribute("style");
             this.setMetadataVisibility(form, Boolean(this.metaVisible[section]));
 
             const videoTagsWrapper = this.html.createDiv(
@@ -153,10 +159,7 @@ export default class Metadata {
         }
 
         form.className = "metadata-form";
-        form.style.left = "";
-        form.style.top = "";
-        form.style.bottom = "";
-        form.style.right = "";
+        form.removeAttribute("style");
 
         if (!this.metaVisible[section] && this.metaVisible[section] == null) {
             throw Error("Visibility not found");

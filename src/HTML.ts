@@ -4,7 +4,7 @@ import type { Tag } from "./types";
 import VideoApi from "./VideoApi";
 import User from "./User";
 
-type ToggleTagHandler = (tag: string, active: boolean) => void;
+type ToggleTagHandler = (tag: string, active: boolean, section?: SectionId) => void;
 type DeleteTagHandler = (tag: Tag, videoId?: number) => Promise<void>;
 type AddTagHandler = (tagTitle: string, tagId?: number) => Promise<void>;
 
@@ -167,7 +167,14 @@ export default class HTML {
     ) {
         container.innerHTML = "";
         const fragment = document.createDocumentFragment();
-        const visibleCount = this.state.multiSection ? 5 : 7;
+        const visibleCount = this.state.multiSection ? 8 : 7;
+
+        if (tags.length === 0 && this.state.multiSection) {
+            const noTagsSpan = document.createElement("span");
+            noTagsSpan.className = "text-[11px] text-slate-400 italic px-1";
+            noTagsSpan.textContent = "No tags";
+            fragment.appendChild(noTagsSpan);
+        }
 
         tags.forEach((tag, index) => {
             const button = document.createElement("button");
@@ -193,7 +200,7 @@ export default class HTML {
 
             button.addEventListener("click", (event) => {
                 event.stopPropagation();
-                onToggleTag?.(tag.title, true);
+                onToggleTag?.(tag.title, true, section);
             });
 
             if (!this.state.multiSection) {
@@ -221,7 +228,7 @@ export default class HTML {
         if (!this.state.advancedMode && tags.length > visibleCount) {
             const toggleButton = document.createElement("button");
             toggleButton.textContent = "...";
-            toggleButton.className = "px-2 py-1 m-1 text-xs rounded-full bg-white/10 text-white hover:bg-white/30";
+            toggleButton.className = "px-2 py-0.5 m-0.5 text-xs rounded-full bg-white/10 text-white hover:bg-white/30";
             toggleButton.onclick = (event) => {
                 event.stopPropagation();
                 container.querySelectorAll(".hidden-tag").forEach((element) => element.classList.toggle("hidden"));
@@ -230,122 +237,122 @@ export default class HTML {
             fragment.appendChild(toggleButton);
         }
 
-        if (!onAddTag) return;
+        if (!this.state.multiSection && onAddTag) {
+            const addPillWrapper = document.createElement("div");
+            addPillWrapper.className = "relative block";
 
-        const addPillWrapper = document.createElement("div");
-        addPillWrapper.className = "relative block";
+            const addPill = document.createElement("button");
+            addPill.className = `add-tag-pill ${this.state.advancedMode ? "" : "hidden"}`;
+            addPill.type = "button";
+            addPill.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span>Add tag</span>`;
 
-        const addPill = document.createElement("button");
-        addPill.className = `add-tag-pill ${this.state.advancedMode ? "" : "hidden"}`;
-        addPill.type = "button";
-        addPill.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span>Add tag</span>`;
+            const popover = document.createElement("div");
+            popover.className = "tag-search-popover hidden";
 
-        const popover = document.createElement("div");
-        popover.className = "tag-search-popover hidden";
+            const filterInput = document.createElement("input");
+            filterInput.type = "text";
+            filterInput.className = "tag-search-input";
+            filterInput.placeholder = "Filter tags...";
 
-        const filterInput = document.createElement("input");
-        filterInput.type = "text";
-        filterInput.className = "tag-search-input";
-        filterInput.placeholder = "Filter tags...";
+            const resultsDiv = document.createElement("div");
+            resultsDiv.className = "tag-search-results";
 
-        const resultsDiv = document.createElement("div");
-        resultsDiv.className = "tag-search-results";
-
-        const renderFilteredOptions = async (query: string = "") => {
-            await this.state.tagsPromise;
-            resultsDiv.innerHTML = "";
-            const cleanQuery = query.toLowerCase().trim();
-            const matches = this.state.allTags.filter((t) =>
-                !cleanQuery || t.title.toLowerCase().includes(cleanQuery)
-            );
-
-            const hasExactMatch = matches.some((t) => t.title.toLowerCase() === cleanQuery);
-            if (cleanQuery && !hasExactMatch) {
-                const addNewItem = document.createElement("div");
-                addNewItem.className = "tag-search-item font-semibold text-green-400";
-                addNewItem.textContent = `+ Add "${query.trim()}"`;
-                addNewItem.addEventListener("click", async (e) => {
-                    e.stopPropagation();
-                    popover.classList.add("hidden");
-                    await onAddTag(query.trim());
-                });
-                resultsDiv.appendChild(addNewItem);
-            }
-
-            if (matches.length === 0 && !cleanQuery) {
-                const emptyMsg = document.createElement("div");
-                emptyMsg.className = "text-xs text-gray-400 p-2 text-center";
-                emptyMsg.textContent = "No matching tags";
-                resultsDiv.appendChild(emptyMsg);
-                return;
-            }
-
-            matches.slice(0, 30).forEach((t) => {
-                const item = document.createElement("div");
-                item.className = "tag-search-item";
-                item.textContent = t.title;
-                item.addEventListener("click", async (e) => {
-                    e.stopPropagation();
-                    popover.classList.add("hidden");
-                    await onAddTag(t.title, t.id);
-                });
-                resultsDiv.appendChild(item);
-            });
-        };
-
-        filterInput.addEventListener("input", () => {
-            void renderFilteredOptions(filterInput.value);
-        });
-
-        filterInput.addEventListener("keydown", async (e) => {
-            if (e.key === "Enter") {
-                e.preventDefault();
-                e.stopPropagation();
-                const rawValue = filterInput.value.trim();
-                if (!rawValue) return;
-                const cleanQuery = rawValue.toLowerCase();
-                const exactMatch = this.state.allTags.find(
-                    (t) => t.title.toLowerCase() === cleanQuery
+            const renderFilteredOptions = async (query: string = "") => {
+                await this.state.tagsPromise;
+                resultsDiv.innerHTML = "";
+                const cleanQuery = query.toLowerCase().trim();
+                const matches = this.state.allTags.filter((t) =>
+                    !cleanQuery || t.title.toLowerCase().includes(cleanQuery)
                 );
-                popover.classList.add("hidden");
-                if (exactMatch) {
-                    await onAddTag(exactMatch.title, exactMatch.id);
-                } else {
-                    const firstMatch = this.state.allTags.find(
-                        (t) => t.title.toLowerCase().includes(cleanQuery)
+
+                const hasExactMatch = matches.some((t) => t.title.toLowerCase() === cleanQuery);
+                if (cleanQuery && !hasExactMatch) {
+                    const addNewItem = document.createElement("div");
+                    addNewItem.className = "tag-search-item font-semibold text-green-400";
+                    addNewItem.textContent = `+ Add "${query.trim()}"`;
+                    addNewItem.addEventListener("click", async (e) => {
+                        e.stopPropagation();
+                        popover.classList.add("hidden");
+                        await onAddTag(query.trim());
+                    });
+                    resultsDiv.appendChild(addNewItem);
+                }
+
+                if (matches.length === 0 && !cleanQuery) {
+                    const emptyMsg = document.createElement("div");
+                    emptyMsg.className = "text-xs text-gray-400 p-2 text-center";
+                    emptyMsg.textContent = "No matching tags";
+                    resultsDiv.appendChild(emptyMsg);
+                    return;
+                }
+
+                matches.slice(0, 30).forEach((t) => {
+                    const item = document.createElement("div");
+                    item.className = "tag-search-item";
+                    item.textContent = t.title;
+                    item.addEventListener("click", async (e) => {
+                        e.stopPropagation();
+                        popover.classList.add("hidden");
+                        await onAddTag(t.title, t.id);
+                    });
+                    resultsDiv.appendChild(item);
+                });
+            };
+
+            filterInput.addEventListener("input", () => {
+                void renderFilteredOptions(filterInput.value);
+            });
+
+            filterInput.addEventListener("keydown", async (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const rawValue = filterInput.value.trim();
+                    if (!rawValue) return;
+                    const cleanQuery = rawValue.toLowerCase();
+                    const exactMatch = this.state.allTags.find(
+                        (t) => t.title.toLowerCase() === cleanQuery
                     );
-                    if (firstMatch) {
-                        await onAddTag(firstMatch.title, firstMatch.id);
+                    popover.classList.add("hidden");
+                    if (exactMatch) {
+                        await onAddTag(exactMatch.title, exactMatch.id);
                     } else {
-                        await onAddTag(rawValue);
+                        const firstMatch = this.state.allTags.find(
+                            (t) => t.title.toLowerCase().includes(cleanQuery)
+                        );
+                        if (firstMatch) {
+                            await onAddTag(firstMatch.title, firstMatch.id);
+                        } else {
+                            await onAddTag(rawValue);
+                        }
                     }
                 }
-            }
-        });
+            });
 
-        addPill.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            const isHidden = popover.classList.contains("hidden");
-            if (isHidden) {
-                filterInput.value = "";
-                await renderFilteredOptions();
-                popover.classList.remove("hidden");
-                setTimeout(() => filterInput.focus(), 50);
-            } else {
-                popover.classList.add("hidden");
-            }
-        });
+            addPill.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const isHidden = popover.classList.contains("hidden");
+                if (isHidden) {
+                    filterInput.value = "";
+                    await renderFilteredOptions();
+                    popover.classList.remove("hidden");
+                    setTimeout(() => filterInput.focus(), 50);
+                } else {
+                    popover.classList.add("hidden");
+                }
+            });
 
-        document.addEventListener("click", (e) => {
-            if (!addPillWrapper.contains(e.target as Node)) {
-                popover.classList.add("hidden");
-            }
-        });
+            document.addEventListener("click", (e) => {
+                if (!addPillWrapper.contains(e.target as Node)) {
+                    popover.classList.add("hidden");
+                }
+            });
 
-        popover.append(filterInput, resultsDiv);
-        addPillWrapper.append(addPill, popover);
-        fragment.appendChild(document.createElement("br"));
-        fragment.appendChild(addPillWrapper);
+            popover.append(filterInput, resultsDiv);
+            addPillWrapper.append(addPill, popover);
+            fragment.appendChild(document.createElement("br"));
+            fragment.appendChild(addPillWrapper);
+        }
 
         container.appendChild(fragment);
     }

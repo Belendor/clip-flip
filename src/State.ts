@@ -33,6 +33,7 @@ class State {
     };
     apiUrl = config.apiUrl;
     taggedVideos: Video[] | null = null;
+    taggedVideosBySection: Map<SectionId, Video[]> = new Map();
     trendingVideos: Video[] | null = null;
     newVideos: NewVideo[] | null = null;
     likedVideos: Video[] | null = null;
@@ -355,17 +356,17 @@ class State {
         return null;
     }
 
-    peekNextQueuedVideoId(currentId?: number): number {
+    peekNextQueuedVideoId(currentId?: number, section: SectionId = 1): number {
         // If we went back in history, the next queued video MUST be the video ahead in history
-        if (this.canGoForwardInHistory()) {
+        if (this.canGoForwardInHistory() && (!this.multiSection || section === 1)) {
             return this.history[this.historyIndex + 1];
         }
-        // At the frontier: compute the next video segment or random jump
-        return this.computeNextVideoId(currentId ?? this.positions[1]);
+        // At the frontier: compute the next video segment or random jump for this section
+        return this.computeNextVideoId(currentId ?? this.positions[section], section);
     }
 
-    computeNextVideoId(baseId?: number): number {
-        const currentId = baseId ?? this.positions[1] ?? 0;
+    computeNextVideoId(baseId?: number, section: SectionId = 1): number {
+        const currentId = baseId ?? this.positions[section] ?? this.positions[1] ?? 0;
 
         // New mode (iterate stored newVideos array in sequence)
         if (this.state === "new" && this.newVideos != null && this.newVideos.length > 0) {
@@ -391,12 +392,18 @@ class State {
             return videoIds[nextIndex];
         }
 
-        // Tagged / DB videos
-        if (this.taggedVideos != null && this.taggedVideos.length > 0) {
+        // Tagged / DB videos for this specific section
+        const sectionTags = this.activeTags.get(section);
+        const hasSectionTags = !!sectionTags && sectionTags.length > 0;
+        const sectionPool = hasSectionTags
+            ? (this.taggedVideosBySection.get(section) || [])
+            : (this.taggedVideos || []);
+
+        if (sectionPool.length > 0) {
             const pool = this.randomized
-                ? this.taggedVideos.filter((video) => !this.played.has(video.id))
-                : this.taggedVideos;
-            const availableTagged = pool.length > 0 ? pool : this.taggedVideos;
+                ? sectionPool.filter((video) => !this.played.has(video.id))
+                : sectionPool;
+            const availableTagged = pool.length > 0 ? pool : sectionPool;
             if (availableTagged.length === 0) return 0;
 
             if (this.randomized) {
@@ -422,12 +429,12 @@ class State {
     }
 
     async takeNextVideoId(section: SectionId, random: boolean = false, skip: boolean = false): Promise<number> {
-        if (this.canGoForwardInHistory()) {
+        if (this.canGoForwardInHistory() && (!this.multiSection || section === 1)) {
             const historyId = this.getNextVideoIdFromHistory();
             if (historyId != null) return historyId;
         }
 
-        const nextId = this.computeNextVideoId(this.positions[section]);
+        const nextId = this.computeNextVideoId(this.positions[section], section);
         this.positions[section] = nextId;
         return nextId;
     }
@@ -443,21 +450,25 @@ class State {
             return;
         }
 
-        const nextId = this.computeNextVideoId(this.positions[section]);
+        const nextId = this.computeNextVideoId(this.positions[section], section);
         this.positions[section] = nextId;
     }
 
     getVideoById(id: number): VideoWithRelations | null {
+        for (const pool of this.taggedVideosBySection.values()) {
+            const found = pool.find((v) => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
         if (this.taggedVideos) {
-            const found = this.taggedVideos.find(v => v.id === id);
+            const found = this.taggedVideos.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
         }
         if (this.trendingVideos) {
-            const found = this.trendingVideos.find(v => v.id === id);
+            const found = this.trendingVideos.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
         }
         if (this.likedVideos) {
-            const found = this.likedVideos.find(v => v.id === id);
+            const found = this.likedVideos.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
         }
         return null;
@@ -540,26 +551,41 @@ class State {
         this.clearEmptyState();
 
         if (!tags || tags.length === 0) {
-            await this.fetchAllVideos();
+            this.taggedVideosBySection.delete(section);
+            if (!this.multiSection) {
+                await this.fetchAllVideos();
+            } else {
+                const defaultPool = this.taggedVideos || [];
+                if (defaultPool.length > 0) {
+                    const randomVideo = defaultPool[Math.floor(Math.random() * defaultPool.length)];
+                    this.positions[section] = randomVideo.id;
+                }
+            }
             return;
         }
 
         try {
             const videos = await this.api.fetchVideosByTags(tags, this.endIndex);
             const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
-            this.taggedVideos = unwatchedVideos;
+            this.taggedVideosBySection.set(section, unwatchedVideos);
+            if (!this.multiSection || section === 1) {
+                this.taggedVideos = unwatchedVideos;
+            }
 
             if (unwatchedVideos.length === 0) {
-                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                this.positions[section] = 0;
                 return;
             }
 
             const randomVideo = unwatchedVideos[Math.floor(Math.random() * unwatchedVideos.length)];
-            this.positions = { 1: randomVideo.id, 2: randomVideo.id, 3: randomVideo.id, 4: randomVideo.id };
+            this.positions[section] = randomVideo.id;
         } catch (error) {
             console.error(`Failed to fetch videos for section ${section} with tags`, tags, error);
-            this.taggedVideos = [];
-            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            this.taggedVideosBySection.set(section, []);
+            if (!this.multiSection || section === 1) {
+                this.taggedVideos = [];
+            }
+            this.positions[section] = 0;
         }
     }
 
