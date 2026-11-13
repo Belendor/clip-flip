@@ -69,11 +69,17 @@ model Model {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  googleId  String   @unique
-  email     String   @unique
-  name      String?
-  picture   String?
+  id          Int      @id @default(autoincrement())
+  googleId    String?  @unique
+  email       String?  @unique
+  username    String?  @unique
+  password    String?
+  name        String?
+  picture     String?
+  isGuest     Boolean  @default(false)
+  guestNumber Int?     @unique
+  browserId   String?
+  lastIp      String?
 
   reactions VideoReaction[]
   uploadedVideos    Video[]    @relation("UserUploadedVideos")

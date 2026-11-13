@@ -13,6 +13,7 @@ import FormData from 'form-data';
 import { OAuth2Client } from "google-auth-library";
 import cookieParser from "cookie-parser";
 import { execFileSync, execSync } from 'child_process';
+import crypto from 'crypto';
 
 const streamPipeline = promisify(pipeline);
 const upload = multer({ dest: path.join(__dirname, '../tmp_uploads') });
@@ -22,6 +23,7 @@ const prisma = new PrismaClient();
 const app = express();
 const port = 3000;
 
+app.set('trust proxy', true);
 app.use(cookieParser());
 app.use(
   cors({
@@ -1463,6 +1465,64 @@ app.get("/download", async (req, res) => {
   })();
 });
 
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const hashBuffer = Buffer.from(hash, "hex");
+  const testBuffer = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(hashBuffer, testBuffer);
+}
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  const realIp = req.headers["x-real-ip"];
+  if (typeof realIp === "string" && realIp) {
+    return realIp.trim();
+  }
+  return req.ip || req.socket.remoteAddress || "";
+}
+
+function getBrowserId(req: Request): string | undefined {
+  const headerId = req.headers["x-browser-id"];
+  if (typeof headerId === "string" && headerId.trim()) {
+    return headerId.trim();
+  }
+  const cookieId = req.cookies?.browserId;
+  if (typeof cookieId === "string" && cookieId.trim()) {
+    return cookieId.trim();
+  }
+  return undefined;
+}
+
+function setUserCookie(res: Response, userId: number) {
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookie("userId", String(userId), {
+    httpOnly: true,
+    sameSite: isProd ? "none" : "lax",
+    secure: isProd,
+    maxAge: 1000 * 60 * 60 * 24 * 365,
+  });
+}
+
+function setBrowserCookie(res: Response, browserId: string) {
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookie("browserId", browserId, {
+    httpOnly: false,
+    sameSite: isProd ? "none" : "lax",
+    secure: isProd,
+    maxAge: 1000 * 60 * 60 * 24 * 365,
+  });
+}
+
 app.post("/auth/google", async (req: Request, res: Response) => {
   try {
     const { credential } = req.body;
@@ -1478,77 +1538,371 @@ app.post("/auth/google", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Invalid Google token" });
     }
 
-    const user = await prisma.user.upsert({
+    const rawUserId = req.cookies.userId;
+    const currentUserId = Number(rawUserId);
+    let currentUser: any = null;
+    if (rawUserId && !isNaN(currentUserId)) {
+      currentUser = await prisma.user.findUnique({ where: { id: currentUserId } });
+    }
+
+    const existingGoogleUser = await prisma.user.findUnique({
       where: { googleId: payload.sub },
-      update: {
-        email: payload.email,
-        name: payload.name ?? null,
-        picture: payload.picture ?? null,
-      },
-      create: {
-        googleId: payload.sub,
-        email: payload.email,
-        name: payload.name ?? null,
-        picture: payload.picture ?? null,
-      },
     });
 
-    res.cookie("userId", user.id, {
-      httpOnly: true,
-      sameSite: "none",
-      secure: true,
-      maxAge: 1000 * 60 * 60 * 24 * 30,
-    });
+    let targetUser: any = null;
 
-    return res.json({ success: true, user });
+    if (currentUser?.isGuest) {
+      if (existingGoogleUser) {
+        // Transfer guest reactions to existing Google account
+        const guestReactions = await prisma.videoReaction.findMany({
+          where: { userId: currentUser.id },
+        });
+        for (const r of guestReactions) {
+          await prisma.videoReaction.upsert({
+            where: {
+              userId_videoId: {
+                userId: existingGoogleUser.id,
+                videoId: r.videoId,
+              },
+            },
+            update: { type: r.type },
+            create: {
+              userId: existingGoogleUser.id,
+              videoId: r.videoId,
+              type: r.type,
+            },
+          });
+        }
+        // Transfer uploads
+        await prisma.video.updateMany({
+          where: { userId: currentUser.id },
+          data: { userId: existingGoogleUser.id },
+        });
+        await prisma.newVideo.updateMany({
+          where: { userId: currentUser.id },
+          data: { userId: existingGoogleUser.id },
+        });
+
+        // Clean up temporary guest user
+        await prisma.user.delete({ where: { id: currentUser.id } }).catch(() => {});
+
+        // Update target user with latest Google profile info
+        targetUser = await prisma.user.update({
+          where: { id: existingGoogleUser.id },
+          data: {
+            email: payload.email,
+            name: payload.name ?? existingGoogleUser.name,
+            picture: payload.picture ?? existingGoogleUser.picture,
+          },
+        });
+      } else {
+        // Upgrade current guest user directly
+        targetUser = await prisma.user.update({
+          where: { id: currentUser.id },
+          data: {
+            googleId: payload.sub,
+            email: payload.email,
+            name: payload.name ?? currentUser.name,
+            picture: payload.picture ?? null,
+            isGuest: false,
+          },
+        });
+      }
+    } else {
+      // Normal upsert
+      targetUser = await prisma.user.upsert({
+        where: { googleId: payload.sub },
+        update: {
+          email: payload.email,
+          name: payload.name ?? null,
+          picture: payload.picture ?? null,
+        },
+        create: {
+          googleId: payload.sub,
+          email: payload.email,
+          name: payload.name ?? null,
+          picture: payload.picture ?? null,
+          isGuest: false,
+        },
+      });
+    }
+
+    setUserCookie(res, targetUser.id);
+
+    return res.json({
+      success: true,
+      user: {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+        username: targetUser.username,
+        picture: targetUser.picture,
+        isGuest: !!targetUser.isGuest,
+      },
+    });
   } catch (err) {
+    console.error("Google auth error:", err);
     return res.status(401).json({ success: false, error: "Login failed" });
+  }
+});
+
+app.post("/auth/register", async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+    const cleanUsername = String(username || "").trim();
+    const cleanPassword = String(password || "");
+
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({ error: "Username must be at least 3 characters." });
+    }
+    if (cleanPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters." });
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: { username: { equals: cleanUsername } },
+    });
+    if (existing) {
+      return res.status(400).json({ error: "Username is already taken." });
+    }
+
+    const hashedPassword = hashPassword(cleanPassword);
+    const rawUserId = req.cookies.userId;
+    const currentUserId = Number(rawUserId);
+    let currentUser: any = null;
+    if (rawUserId && !isNaN(currentUserId)) {
+      currentUser = await prisma.user.findUnique({ where: { id: currentUserId } });
+    }
+
+    let user: any = null;
+    if (currentUser?.isGuest) {
+      user = await prisma.user.update({
+        where: { id: currentUser.id },
+        data: {
+          username: cleanUsername,
+          name: cleanUsername,
+          password: hashedPassword,
+          isGuest: false,
+        },
+      });
+    } else {
+      const clientIp = getClientIp(req);
+      const browserId = getBrowserId(req);
+      user = await prisma.user.create({
+        data: {
+          username: cleanUsername,
+          name: cleanUsername,
+          password: hashedPassword,
+          isGuest: false,
+          browserId: browserId || null,
+          lastIp: clientIp || null,
+        },
+      });
+    }
+
+    setUserCookie(res, user.id);
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        picture: user.picture,
+        isGuest: false,
+      },
+    });
+  } catch (err: any) {
+    console.error("Register error:", err);
+    return res.status(500).json({ error: "Registration failed." });
+  }
+});
+
+app.post("/auth/login", async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+    const cleanUsername = String(username || "").trim();
+    const cleanPassword = String(password || "");
+
+    if (!cleanUsername || !cleanPassword) {
+      return res.status(400).json({ error: "Username and password required." });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { username: { equals: cleanUsername } },
+    });
+
+    if (!user || !user.password || !verifyPassword(cleanPassword, user.password)) {
+      return res.status(401).json({ error: "Invalid username or password." });
+    }
+
+    // Merge temporary guest likes/uploads into logged-in user if different
+    const rawUserId = req.cookies.userId;
+    const currentUserId = Number(rawUserId);
+    if (rawUserId && !isNaN(currentUserId) && currentUserId !== user.id) {
+      const currentGuest = await prisma.user.findUnique({ where: { id: currentUserId } });
+      if (currentGuest?.isGuest) {
+        const guestReactions = await prisma.videoReaction.findMany({
+          where: { userId: currentGuest.id },
+        });
+        for (const r of guestReactions) {
+          await prisma.videoReaction.upsert({
+            where: { userId_videoId: { userId: user.id, videoId: r.videoId } },
+            update: { type: r.type },
+            create: { userId: user.id, videoId: r.videoId, type: r.type },
+          });
+        }
+        await prisma.video.updateMany({
+          where: { userId: currentGuest.id },
+          data: { userId: user.id },
+        });
+        await prisma.newVideo.updateMany({
+          where: { userId: currentGuest.id },
+          data: { userId: user.id },
+        });
+        await prisma.user.delete({ where: { id: currentGuest.id } }).catch(() => {});
+      }
+    }
+
+    setUserCookie(res, user.id);
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        picture: user.picture,
+        isGuest: !!user.isGuest,
+      },
+    });
+  } catch (err: any) {
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Login failed." });
   }
 });
 
 const ADMIN_EMAILS = ["belendorrr@gmail.com"];
 
 app.get("/auth/me", async (req, res) => {
-  const userId = Number(req.cookies.userId);
+  try {
+    const rawUserId = req.cookies.userId;
+    const cookieUserId = Number(rawUserId);
+    const clientIp = getClientIp(req);
+    const browserId = getBrowserId(req);
 
-  if (!userId) {
-    return res.json({ loggedIn: false, user: null });
+    let user: any = null;
+
+    if (rawUserId && !isNaN(cookieUserId)) {
+      user = await prisma.user.findUnique({
+        where: { id: cookieUserId },
+      });
+    }
+
+    // If not authenticated via cookie, find or create guest user
+    if (!user) {
+      // 1. Try finding by browserId
+      if (browserId) {
+        user = await prisma.user.findFirst({
+          where: {
+            isGuest: true,
+            browserId: browserId,
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+      }
+
+      // 2. If not found by browserId, try finding by IP
+      if (!user && clientIp) {
+        user = await prisma.user.findFirst({
+          where: {
+            isGuest: true,
+            lastIp: clientIp,
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+      }
+
+      // 3. If still not found, create new guest user
+      if (!user) {
+        const maxGuest = await prisma.user.findFirst({
+          where: { guestNumber: { not: null } },
+          orderBy: { guestNumber: "desc" },
+          select: { guestNumber: true },
+        });
+        const nextGuestNumber = (maxGuest?.guestNumber || 0) + 1;
+        const guestName = `Guest ${nextGuestNumber}`;
+
+        user = await prisma.user.create({
+          data: {
+            isGuest: true,
+            guestNumber: nextGuestNumber,
+            name: guestName,
+            browserId: browserId || null,
+            lastIp: clientIp || null,
+          },
+        });
+      }
+
+      setUserCookie(res, user.id);
+    }
+
+    // Keep metadata updated if browserId or IP changed
+    const updates: any = {};
+    if (browserId && user.browserId !== browserId) {
+      updates.browserId = browserId;
+    }
+    if (clientIp && user.lastIp !== clientIp) {
+      updates.lastIp = clientIp;
+    }
+    if (Object.keys(updates).length > 0) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: updates,
+      });
+    }
+
+    if (browserId) {
+      setBrowserCookie(res, browserId);
+    }
+
+    const isAdmin = user.email ? ADMIN_EMAILS.includes(user.email.toLowerCase()) : false;
+    const [likesCount, approvedUploads, pendingUploads] = await Promise.all([
+      prisma.videoReaction.count({
+        where: { userId: user.id, type: "like" },
+      }),
+      prisma.video.count({
+        where: { userId: user.id },
+      }),
+      prisma.newVideo.count({
+        where: { userId: user.id },
+      }),
+    ]);
+
+    const uploadsCount = approvedUploads + pendingUploads;
+
+    return res.json({
+      loggedIn: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        picture: user.picture,
+        isGuest: !!user.isGuest,
+        guestNumber: user.guestNumber,
+        isAdmin,
+        likesCount,
+        uploadsCount,
+        approvedUploads,
+        pendingUploads,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err) {
+    console.error("Error in /auth/me:", err);
+    return res.status(500).json({ error: "Failed to authenticate" });
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-
-  if (!user) {
-    return res.json({ loggedIn: false, user: null });
-  }
-
-  const isAdmin = ADMIN_EMAILS.includes((user.email || "").toLowerCase());
-  const [likesCount, approvedUploads, pendingUploads] = await Promise.all([
-    prisma.videoReaction.count({
-      where: { userId: user.id, type: "like" },
-    }),
-    prisma.video.count({
-      where: { userId: user.id },
-    }),
-    prisma.newVideo.count({
-      where: { userId: user.id },
-    }),
-  ]);
-
-  const uploadsCount = approvedUploads + pendingUploads;
-
-  res.json({
-    loggedIn: true,
-    user: {
-      ...user,
-      isAdmin,
-      likesCount,
-      uploadsCount,
-      approvedUploads,
-      pendingUploads,
-    },
-  });
 });
 
 app.get("/admin/stats", async (req: Request, res: Response) => {
@@ -1566,8 +1920,10 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Forbidden: Admin access required" });
     }
 
-    const [totalUsers, totalLikes, totalVideos, totalUploads, pendingUploads, usersList] = await Promise.all([
+    const [totalUsers, totalGuests, totalRegistered, totalLikes, totalVideos, totalUploads, pendingUploads, usersList] = await Promise.all([
       prisma.user.count(),
+      prisma.user.count({ where: { isGuest: true } }),
+      prisma.user.count({ where: { isGuest: false } }),
       prisma.videoReaction.count({ where: { type: "like" } }),
       prisma.video.count(),
       prisma.video.count({ where: { userId: { not: null } } }),
@@ -1577,6 +1933,9 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
           id: true,
           email: true,
           name: true,
+          username: true,
+          isGuest: true,
+          guestNumber: true,
           picture: true,
           createdAt: true,
           updatedAt: true,
@@ -1602,6 +1961,9 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
         id: u.id,
         email: u.email,
         name: u.name,
+        username: u.username,
+        isGuest: u.isGuest,
+        guestNumber: u.guestNumber,
         picture: u.picture,
         createdAt: u.createdAt,
         updatedAt: u.updatedAt,
@@ -1619,6 +1981,8 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
       success: true,
       stats: {
         totalUsers,
+        totalGuests,
+        totalRegistered,
         totalLikes,
         totalVideos,
         totalUploads,

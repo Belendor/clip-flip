@@ -78,5 +78,6 @@ fi
 
 sudo fuser -k 3000/tcp || true
 sudo systemctl restart clipflip-api
+sudo systemctl restart clipflip-studio || true
 
 echo "✅ Deployment complete! App is live at http://56.228.95.201"

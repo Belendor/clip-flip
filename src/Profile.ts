@@ -3,8 +3,11 @@ import VideoApi from "./VideoApi";
 
 export interface AdminUserRecord {
     id: number;
-    email: string;
+    email: string | null;
     name: string | null;
+    username?: string | null;
+    isGuest?: boolean;
+    guestNumber?: number | null;
     picture: string | null;
     createdAt: string;
     updatedAt?: string;
@@ -17,6 +20,8 @@ export interface AdminUserRecord {
 
 export interface AdminStatsData {
     totalUsers: number;
+    totalGuests?: number;
+    totalRegistered?: number;
     totalLikes: number;
     totalVideos: number;
     totalUploads: number;
@@ -192,7 +197,15 @@ export default class Profile {
                     <!-- User Card -->
                     <div class="profile-card">
                         <div class="profile-avatar-wrap">
-                            <img src="${currentUser.picture || "/favicon.png"}" alt="${currentUser.name || "User"}" class="profile-avatar" />
+                            ${currentUser.isGuest && !currentUser.picture
+                                ? `<div class="profile-avatar flex items-center justify-center bg-slate-800 text-slate-300">
+                                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-8 h-8">
+                                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke-linecap="round" stroke-linejoin="round"/>
+                                           <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
+                                       </svg>
+                                   </div>`
+                                : `<img src="${currentUser.picture || "/favicon.png"}" alt="${currentUser.name || "User"}" class="profile-avatar" />`
+                            }
                             ${isAdmin ? '<span class="profile-admin-crown" title="Administrator">👑</span>' : ""}
                         </div>
                         <div class="profile-user-info">
@@ -200,10 +213,12 @@ export default class Profile {
                                 <h1 class="profile-name">${currentUser.name || "ClipFlip User"}</h1>
                                 ${isAdmin
                                     ? '<span class="admin-badge">ADMIN</span>'
+                                    : currentUser.isGuest
+                                    ? '<span class="guest-badge">GUEST</span>'
                                     : '<span class="member-badge">MEMBER</span>'
                                 }
                             </div>
-                            <div class="profile-email">${currentUser.email}</div>
+                            <div class="profile-email">${currentUser.email || (currentUser.username ? "@" + currentUser.username : "Guest Account · Unlinked")}</div>
                             <div class="profile-meta-row">
                                 <span class="profile-meta-item">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 mr-1 text-pink-400">
@@ -231,6 +246,25 @@ export default class Profile {
                         </div>
                     </div>
 
+                    ${currentUser.isGuest ? `
+                    <!-- Guest Upgrade Banner -->
+                    <div class="guest-upgrade-banner mt-4">
+                        <div class="guest-upgrade-icon">💡</div>
+                        <div class="guest-upgrade-content flex-1">
+                            <h3 class="guest-upgrade-title">Keep Your Likes Forever</h3>
+                            <p class="guest-upgrade-desc">You are using a temporary guest account (${currentUser.name || "Guest"}). Connect your Google account or set a username & password to access your liked clips and uploads from any device.</p>
+                            <div class="guest-upgrade-buttons">
+                                <button type="button" class="profile-action-btn primary" id="guest-link-google-btn">
+                                    Link Google Account
+                                </button>
+                                <button type="button" class="profile-action-btn secondary" id="guest-set-pass-btn">
+                                    Set Username & Password
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ""}
+
                     <!-- Admin or Regular Section -->
                     <div id="profile-dynamic-content" class="mt-6">
                         ${isAdmin
@@ -255,6 +289,15 @@ export default class Profile {
         document.getElementById("profile-watch-likes-btn")?.addEventListener("click", () => {
             this.close();
             this.onWatchFavoritesCallback?.();
+        });
+
+        document.getElementById("guest-link-google-btn")?.addEventListener("click", async () => {
+            await this.user.triggerGoogleLogin();
+            this.render();
+        });
+
+        document.getElementById("guest-set-pass-btn")?.addEventListener("click", () => {
+            this.user.openAuthModal("register");
         });
 
         if (isAdmin) {
@@ -402,7 +445,8 @@ export default class Profile {
             const filtered = stats.users.filter(
                 (u) =>
                     (u.name && u.name.toLowerCase().includes(query)) ||
-                    u.email.toLowerCase().includes(query) ||
+                    (u.email && u.email.toLowerCase().includes(query)) ||
+                    (u.username && u.username.toLowerCase().includes(query)) ||
                     String(u.id).includes(query)
             );
             if (tbody) {
@@ -447,15 +491,16 @@ export default class Profile {
                                 />
                                 <div class="flex flex-col">
                                     <span class="admin-table-name font-medium text-white flex items-center gap-1.5">
-                                        ${u.name || "Anonymous"}
+                                        ${u.name || (u.isGuest ? `Guest ${u.guestNumber ?? ""}` : "Anonymous")}
                                         ${isCurrentUserAdmin ? '<span class="admin-tag-micro">ADMIN</span>' : ""}
+                                        ${u.isGuest ? '<span class="guest-badge-micro">GUEST</span>' : ""}
                                     </span>
                                     <span class="text-[11px] text-gray-500 font-mono">ID: #${u.id}</span>
                                 </div>
                             </div>
                         </td>
                         <td class="text-gray-300 font-mono text-xs select-all">
-                            ${u.email}
+                            ${u.email || (u.username ? "@" + u.username : '<span class="text-gray-500 italic">Guest (Unlinked)</span>')}
                         </td>
                         <td class="text-right">
                             <span class="admin-like-pill ${u.likesCount > 0 ? "has-likes" : "zero-likes"}">
