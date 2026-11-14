@@ -1,6 +1,7 @@
 import User, { AuthUser } from "./User";
 import VideoApi from "./VideoApi";
 import State from "./State";
+import { showNsfwModal } from "./NsfwModal";
 
 export interface AdminUserRecord {
     id: number;
@@ -306,6 +307,9 @@ export default class Profile {
                     </div>
                     ` : ""}
 
+                    <!-- Content Preference & Blacklist Filter (Visible for ALL users) -->
+                    ${this.renderPreferencesSection(currentUser)}
+
                     <!-- Admin or Regular Section -->
                     <div id="profile-dynamic-content" class="mt-6">
                         ${isAdmin
@@ -341,26 +345,25 @@ export default class Profile {
             this.user.openAuthModal("register");
         });
 
-        document.getElementById("profile-pref-toggle-btn")?.addEventListener("click", async () => {
-            const currentPref = currentUser.preference || localStorage.getItem("clipflip_preference") || "straight";
-            const nextPref = currentPref === "straight" ? "trans" : "straight";
-            const nextBlacklist = nextPref === "straight" ? ["shemale"] : [];
+        const updatePreference = async (newPref: "straight" | "trans") => {
+            const newBlacklist = newPref === "straight" ? ["shemale"] : [];
+            currentUser.preference = newPref;
+            currentUser.blacklist = newBlacklist;
 
-            currentUser.preference = nextPref;
-            currentUser.blacklist = nextBlacklist;
             try {
-                localStorage.setItem("clipflip_preference", nextPref);
-                localStorage.setItem("clipflip_blacklist_tags", JSON.stringify(nextBlacklist));
+                localStorage.setItem("clipflip_preference", newPref);
+                localStorage.setItem("clipflip_blacklist_tags", JSON.stringify(newBlacklist));
+                localStorage.setItem("clipflip_nsfw_accepted", "true");
             } catch (_) {}
 
             if (this.state) {
-                this.state.setBlacklistTags(nextBlacklist);
+                this.state.setBlacklistTags(newBlacklist);
             }
 
             try {
                 await this.api.updateUserPreferences({
-                    preference: nextPref,
-                    blacklist: nextBlacklist,
+                    preference: newPref,
+                    blacklist: newBlacklist,
                     userId: currentUser.id,
                 });
             } catch (err) {
@@ -368,6 +371,19 @@ export default class Profile {
             }
 
             this.render();
+        };
+
+        document.getElementById("pref-btn-straight")?.addEventListener("click", () => updatePreference("straight"));
+        document.getElementById("pref-btn-trans")?.addEventListener("click", () => updatePreference("trans"));
+
+        document.getElementById("reopen-nsfw-modal-btn")?.addEventListener("click", () => {
+            this.close();
+            try {
+                localStorage.removeItem("clipflip_nsfw_accepted");
+            } catch (_) {}
+            if (this.state) {
+                showNsfwModal(this.state, this.api, this.user);
+            }
         });
 
         if (isAdmin) {
@@ -375,10 +391,62 @@ export default class Profile {
         }
     }
 
-    private renderRegularProfileContent(user: AuthUser): string {
-        const pref = user.preference || localStorage.getItem("clipflip_preference") || "straight";
+    private renderPreferencesSection(currentUser: AuthUser): string {
+        const pref = currentUser.preference || (typeof localStorage !== "undefined" ? localStorage.getItem("clipflip_preference") : null) || "straight";
         const isStraight = pref === "straight";
+        const activeBlacklist = isStraight ? ["shemale"] : [];
 
+        return `
+            <div class="profile-section mt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="profile-section-title mb-0 flex items-center gap-2">
+                        <span>🛡️</span> Content Preferences & Tag Filter
+                    </h3>
+                    <span class="text-xs ${isStraight ? 'text-pink-400 font-semibold' : 'text-emerald-400 font-semibold'}">
+                        ${isStraight ? '👩‍❤️‍👨 Straight Mode Active' : '🏳️‍⚧️ All Content Mode'}
+                    </span>
+                </div>
+                
+                <div class="profile-pref-card">
+                    <div class="profile-pref-info">
+                        <div class="profile-pref-title">
+                            <span>Feed Orientation:</span>
+                            <span class="profile-pref-pill ${isStraight ? 'straight' : 'trans'}">
+                                ${isStraight ? "Straight" : "Trans / All"}
+                            </span>
+                            <span class="profile-blacklist-badge ${isStraight ? 'active' : ''}">
+                                ${isStraight ? "shemale blacklisted" : "no blacklist"}
+                            </span>
+                        </div>
+                        <p class="profile-pref-desc">
+                            ${isStraight
+                                ? "Clips tagged with 'shemale' or trans content are automatically hidden and excluded from your feed."
+                                : "Full library enabled. Transgender and shemale clips are included in your random feed."
+                            }
+                        </p>
+                    </div>
+
+                    <div class="profile-pref-buttons flex items-center gap-2">
+                        <button type="button" class="profile-pref-btn ${isStraight ? 'active' : ''}" id="pref-btn-straight" data-pref="straight">
+                            👩‍❤️‍👨 Straight
+                        </button>
+                        <button type="button" class="profile-pref-btn ${!isStraight ? 'active' : ''}" id="pref-btn-trans" data-pref="trans">
+                            🏳️‍⚧️ Trans / All
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3 text-xs text-gray-400 px-1">
+                    <span>Active Blacklist: <code class="font-mono text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded">${JSON.stringify(activeBlacklist)}</code></span>
+                    <button type="button" id="reopen-nsfw-modal-btn" class="text-xs text-sky-400 hover:text-sky-300 underline cursor-pointer text-left sm:text-right">
+                        Re-open 18+ Verification Dialog
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    private renderRegularProfileContent(user: AuthUser): string {
         return `
             <div class="profile-section">
                 <h3 class="profile-section-title">My Activity</h3>
@@ -398,31 +466,6 @@ export default class Profile {
                             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                         <span>Watch My Liked Clips</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Content Preference & Blacklist -->
-            <div class="profile-section mt-6">
-                <h3 class="profile-section-title">Content Preferences</h3>
-                <div class="profile-pref-card">
-                    <div class="profile-pref-info">
-                        <div class="profile-pref-title">
-                            <span>Orientation:</span>
-                            <span class="profile-pref-pill" id="profile-pref-pill">${isStraight ? "Straight (Shemale Blacklisted)" : "Trans / All Library"}</span>
-                        </div>
-                        <p class="profile-pref-desc">
-                            ${isStraight
-                                ? "Clips tagged with 'shemale' are automatically excluded from your feed."
-                                : "All adult content categories are enabled without tag restrictions."
-                            }
-                        </p>
-                    </div>
-                    <button type="button" class="profile-pref-toggle-btn" id="profile-pref-toggle-btn">
-                        <span>Switch to ${isStraight ? "Trans / All" : "Straight"}</span>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 ml-1">
-                            <path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
                     </button>
                 </div>
             </div>
