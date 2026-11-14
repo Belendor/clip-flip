@@ -14,6 +14,12 @@ export interface AuthUser {
     picture?: string | null;
     isGuest?: boolean;
     guestNumber?: number | null;
+    country?: string | null;
+    countryCode?: string | null;
+    city?: string | null;
+    device?: string | null;
+    os?: string | null;
+    browser?: string | null;
     isAdmin?: boolean;
     likesCount?: number;
     uploadsCount?: number;
@@ -47,6 +53,13 @@ export default class User {
 
     constructor() {
         this.loadGoogleSignIn.bind(this);
+        try {
+            const cached = localStorage.getItem("clipflip_user_cache");
+            if (cached) {
+                this.currentUser = JSON.parse(cached);
+                this.renderUser();
+            }
+        } catch (_) {}
     }
 
     async init() {
@@ -76,11 +89,18 @@ export default class User {
             const data = await res.json();
             if (data.loggedIn && data.user) {
                 this.currentUser = data.user;
-                try { localStorage.setItem("clipflip_user_id", String(data.user.id)); } catch (_) {}
+                try {
+                    localStorage.setItem("clipflip_user_id", String(data.user.id));
+                    localStorage.setItem("clipflip_user_cache", JSON.stringify(data.user));
+                } catch (_) {}
+                this.renderUser();
                 this.onAuthChange?.(this.currentUser);
             } else {
                 this.currentUser = null;
-                try { localStorage.removeItem("clipflip_user_id"); } catch (_) {}
+                try {
+                    localStorage.removeItem("clipflip_user_id");
+                    localStorage.removeItem("clipflip_user_cache");
+                } catch (_) {}
             }
         } catch (error) {
             console.warn("Failed to check auth status:", error);
@@ -223,9 +243,9 @@ export default class User {
         // Avatar
         if (isGuest) {
             const guestIcon = document.createElement("div");
-            guestIcon.className = "user-avatar guest-avatar-icon flex items-center justify-center bg-slate-800 text-slate-300";
+            guestIcon.className = "user-avatar guest-avatar-icon flex items-center justify-center bg-slate-800 text-slate-300 flex-shrink-0";
             guestIcon.innerHTML = `
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke-linecap="round" stroke-linejoin="round"/>
                     <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -233,9 +253,10 @@ export default class User {
             userPill.appendChild(guestIcon);
         } else {
             const avatar = document.createElement("img");
-            avatar.src = this.currentUser.picture || "/favicon.png";
+            avatar.src = this.currentUser.picture || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
             avatar.alt = this.currentUser.name || "User";
             avatar.className = "user-avatar";
+            avatar.onerror = () => { avatar.onerror = null; };
             userPill.appendChild(avatar);
         }
 
@@ -668,7 +689,10 @@ export default class User {
             console.warn("Logout error:", err);
         }
         this.currentUser = null;
-        try { localStorage.removeItem("clipflip_user_id"); } catch (_) {}
+        try {
+            localStorage.removeItem("clipflip_user_id");
+            localStorage.removeItem("clipflip_user_cache");
+        } catch (_) {}
         // After logout, re-check auth to assign or fetch guest session seamlessly
         await this.checkAuth();
         this.renderUser();

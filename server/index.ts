@@ -1523,6 +1523,111 @@ function setBrowserCookie(res: Response, browserId: string) {
   });
 }
 
+interface DeviceInfo {
+  deviceType: "Mobile" | "Tablet" | "Desktop" | "Bot" | "Unknown";
+  os: string;
+  browser: string;
+}
+
+function parseUserAgent(uaString: string | undefined): DeviceInfo {
+  if (!uaString) {
+    return { deviceType: "Unknown", os: "Unknown", browser: "Unknown" };
+  }
+
+  const ua = uaString.toLowerCase();
+
+  // 1. Device Type
+  let deviceType: DeviceInfo["deviceType"] = "Desktop";
+  if (/bot|crawler|spider|crawling/i.test(ua)) {
+    deviceType = "Bot";
+  } else if (/ipad|tablet|(android(?!.*mobile))|kindle|silk/i.test(ua)) {
+    deviceType = "Tablet";
+  } else if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile|windows phone/i.test(ua)) {
+    deviceType = "Mobile";
+  }
+
+  // 2. Operating System
+  let os = "Other";
+  if (/windows phone/i.test(ua)) os = "Windows Phone";
+  else if (/windows nt 10/i.test(ua)) os = "Windows 10/11";
+  else if (/windows nt 6\.3/i.test(ua)) os = "Windows 8.1";
+  else if (/windows nt 6\.2/i.test(ua)) os = "Windows 8";
+  else if (/windows nt 6\.1/i.test(ua)) os = "Windows 7";
+  else if (/windows/i.test(ua)) os = "Windows";
+  else if (/iphone/i.test(ua)) os = "iOS (iPhone)";
+  else if (/ipad/i.test(ua)) os = "iOS (iPad)";
+  else if (/android/i.test(ua)) {
+    const match = ua.match(/android\s([0-9\.]+)/i);
+    os = match ? `Android ${match[1]}` : "Android";
+  } else if (/mac os x/i.test(ua)) {
+    os = "macOS";
+  } else if (/cros/i.test(ua)) {
+    os = "Chrome OS";
+  } else if (/linux/i.test(ua)) {
+    os = "Linux";
+  }
+
+  // 3. Browser
+  let browser = "Other";
+  if (/edg\//i.test(ua)) browser = "Edge";
+  else if (/opr\/|opera/i.test(ua)) browser = "Opera";
+  else if (/samsungbrowser/i.test(ua)) browser = "Samsung";
+  else if (/chrome|crios/i.test(ua)) browser = "Chrome";
+  else if (/firefox|fxios/i.test(ua)) browser = "Firefox";
+  else if (/safari/i.test(ua)) browser = "Safari";
+  else if (/msie|trident/i.test(ua)) browser = "IE";
+
+  return { deviceType, os, browser };
+}
+
+const geoCache = new Map<string, { country: string; countryCode: string; city?: string }>();
+
+async function lookupIpGeo(ip?: string, cfCountry?: string): Promise<{ country: string; countryCode: string; city?: string } | null> {
+  if (!ip) return cfCountry ? { country: cfCountry, countryCode: cfCountry } : null;
+
+  const cleanIp = ip.replace(/^::ffff:/, "").trim();
+
+  // Check private / local ranges
+  if (
+    !cleanIp ||
+    cleanIp === "127.0.0.1" ||
+    cleanIp === "::1" ||
+    cleanIp.startsWith("192.168.") ||
+    cleanIp.startsWith("10.") ||
+    cleanIp.startsWith("172.16.") ||
+    cleanIp === "localhost"
+  ) {
+    return { country: "Local / Private", countryCode: "LOC" };
+  }
+
+  if (geoCache.has(cleanIp)) {
+    return geoCache.get(cleanIp)!;
+  }
+
+  if (cfCountry && cfCountry.length === 2 && cfCountry !== "XX") {
+    const res = { country: cfCountry, countryCode: cfCountry };
+    geoCache.set(cleanIp, res);
+    return res;
+  }
+
+  try {
+    const response = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=status,country,countryCode,city`, {
+      timeout: 2000,
+    });
+    if (response.data && response.data.status === "success") {
+      const geo = {
+        country: response.data.country || "Unknown",
+        countryCode: response.data.countryCode || "",
+        city: response.data.city || "",
+      };
+      geoCache.set(cleanIp, geo);
+      return geo;
+    }
+  } catch (_) {}
+
+  return cfCountry ? { country: cfCountry, countryCode: cfCountry } : null;
+}
+
 app.post("/auth/google", async (req: Request, res: Response) => {
   try {
     const { credential } = req.body;
@@ -1790,6 +1895,9 @@ app.get("/auth/me", async (req, res) => {
     const cookieUserId = Number(rawUserId);
     const clientIp = getClientIp(req);
     const browserId = getBrowserId(req);
+    const userAgent = (req.headers["user-agent"] as string) || "";
+    const cfCountry = typeof req.headers["cf-ipcountry"] === "string" ? req.headers["cf-ipcountry"].toUpperCase() : undefined;
+    const { deviceType, os, browser } = parseUserAgent(userAgent);
 
     let user: any = null;
 
@@ -1832,6 +1940,7 @@ app.get("/auth/me", async (req, res) => {
         });
         const nextGuestNumber = (maxGuest?.guestNumber || 0) + 1;
         const guestName = `Guest ${nextGuestNumber}`;
+        const geo = await lookupIpGeo(clientIp, cfCountry);
 
         user = await prisma.user.create({
           data: {
@@ -1840,6 +1949,13 @@ app.get("/auth/me", async (req, res) => {
             name: guestName,
             browserId: browserId || null,
             lastIp: clientIp || null,
+            country: geo?.country || null,
+            countryCode: geo?.countryCode || (cfCountry || null),
+            city: geo?.city || null,
+            device: deviceType,
+            os: os,
+            browser: browser,
+            userAgent: userAgent ? userAgent.substring(0, 300) : null,
           },
         });
       }
@@ -1847,7 +1963,7 @@ app.get("/auth/me", async (req, res) => {
       setUserCookie(res, user.id);
     }
 
-    // Keep metadata updated if browserId or IP changed
+    // Keep metadata updated if browserId, IP, or device changed
     const updates: any = {};
     if (browserId && user.browserId !== browserId) {
       updates.browserId = browserId;
@@ -1855,6 +1971,27 @@ app.get("/auth/me", async (req, res) => {
     if (clientIp && user.lastIp !== clientIp) {
       updates.lastIp = clientIp;
     }
+    if (deviceType && user.device !== deviceType && deviceType !== "Unknown") {
+      updates.device = deviceType;
+    }
+    if (os && user.os !== os && os !== "Other") {
+      updates.os = os;
+    }
+    if (browser && user.browser !== browser && browser !== "Other") {
+      updates.browser = browser;
+    }
+    if (userAgent && (!user.userAgent || user.userAgent !== userAgent.substring(0, 300))) {
+      updates.userAgent = userAgent.substring(0, 300);
+    }
+    if ((!user.country || !user.countryCode) && clientIp) {
+      const geo = await lookupIpGeo(clientIp, cfCountry);
+      if (geo) {
+        updates.country = geo.country;
+        updates.countryCode = geo.countryCode;
+        if (geo.city) updates.city = geo.city;
+      }
+    }
+
     if (Object.keys(updates).length > 0) {
       user = await prisma.user.update({
         where: { id: user.id },
@@ -1891,6 +2028,12 @@ app.get("/auth/me", async (req, res) => {
         picture: user.picture,
         isGuest: !!user.isGuest,
         guestNumber: user.guestNumber,
+        country: user.country,
+        countryCode: user.countryCode,
+        city: user.city,
+        device: user.device,
+        os: user.os,
+        browser: user.browser,
         isAdmin,
         likesCount,
         uploadsCount,
@@ -1937,6 +2080,13 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
           isGuest: true,
           guestNumber: true,
           picture: true,
+          lastIp: true,
+          country: true,
+          countryCode: true,
+          city: true,
+          device: true,
+          os: true,
+          browser: true,
           createdAt: true,
           updatedAt: true,
           reactions: {
@@ -1965,6 +2115,13 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
         isGuest: u.isGuest,
         guestNumber: u.guestNumber,
         picture: u.picture,
+        lastIp: u.lastIp,
+        country: u.country,
+        countryCode: u.countryCode,
+        city: u.city,
+        device: u.device,
+        os: u.os,
+        browser: u.browser,
         createdAt: u.createdAt,
         updatedAt: u.updatedAt,
         likesCount: u.reactions.length,

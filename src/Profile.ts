@@ -16,7 +16,42 @@ export interface AdminUserRecord {
     approvedUploads?: number;
     pendingUploads?: number;
     isAdmin?: boolean;
+    lastIp?: string | null;
+    country?: string | null;
+    countryCode?: string | null;
+    city?: string | null;
+    device?: string | null;
+    os?: string | null;
+    browser?: string | null;
 }
+
+function getCountryFlag(code?: string | null): string {
+    if (!code || code.length !== 2) return "🌐";
+    const upper = code.toUpperCase();
+    if (upper === "XX" || upper === "ZZ") return "🌐";
+    try {
+        const codePoints = [...upper].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65);
+        return String.fromCodePoint(...codePoints);
+    } catch {
+        return "🌐";
+    }
+}
+
+function getDeviceIcon(device?: string | null): string {
+    switch (device) {
+        case "Mobile":
+            return "📱";
+        case "Tablet":
+            return "📟";
+        case "Desktop":
+            return "💻";
+        default:
+            return "💻";
+    }
+}
+
+const DEFAULT_AVATAR_DATA_URI =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
 export interface AdminStatsData {
     totalUsers: number;
@@ -204,7 +239,7 @@ export default class Profile {
                                            <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
                                        </svg>
                                    </div>`
-                                : `<img src="${currentUser.picture || "/favicon.png"}" alt="${currentUser.name || "User"}" class="profile-avatar" />`
+                                : `<img src="${currentUser.picture || DEFAULT_AVATAR_DATA_URI}" alt="${currentUser.name || "User"}" class="profile-avatar" onerror="this.onerror=null;this.src='${DEFAULT_AVATAR_DATA_URI}'" />`
                             }
                             ${isAdmin ? '<span class="profile-admin-crown" title="Administrator">👑</span>' : ""}
                         </div>
@@ -422,7 +457,9 @@ export default class Profile {
                             <tr>
                                 <th class="text-left">#</th>
                                 <th class="text-left">User</th>
-                                <th class="text-left">Email</th>
+                                <th class="text-left">Location / IP</th>
+                                <th class="text-left">Device</th>
+                                <th class="text-left">Account</th>
                                 <th class="text-right">Likes</th>
                                 <th class="text-right">Uploads</th>
                                 <th class="text-right">Registered</th>
@@ -447,7 +484,15 @@ export default class Profile {
                     (u.name && u.name.toLowerCase().includes(query)) ||
                     (u.email && u.email.toLowerCase().includes(query)) ||
                     (u.username && u.username.toLowerCase().includes(query)) ||
-                    String(u.id).includes(query)
+                    (u.country && u.country.toLowerCase().includes(query)) ||
+                    (u.countryCode && u.countryCode.toLowerCase().includes(query)) ||
+                    (u.city && u.city.toLowerCase().includes(query)) ||
+                    (u.lastIp && u.lastIp.toLowerCase().includes(query)) ||
+                    (u.device && u.device.toLowerCase().includes(query)) ||
+                    (u.os && u.os.toLowerCase().includes(query)) ||
+                    (u.browser && u.browser.toLowerCase().includes(query)) ||
+                    String(u.id).includes(query) ||
+                    (u.guestNumber != null && String(u.guestNumber).includes(query))
             );
             if (tbody) {
                 tbody.innerHTML = this.renderUserRows(filtered);
@@ -459,7 +504,7 @@ export default class Profile {
         if (!users || users.length === 0) {
             return `
                 <tr>
-                    <td colspan="6" class="text-center py-6 text-gray-400 text-sm">
+                    <td colspan="8" class="text-center py-6 text-gray-400 text-sm">
                         No registered users found
                     </td>
                 </tr>
@@ -477,18 +522,34 @@ export default class Profile {
                     : "—";
 
                 const isCurrentUserAdmin = !!u.isAdmin;
+                const flag = getCountryFlag(u.countryCode);
+                const countryDisplay = u.country || (u.countryCode ? u.countryCode : "Unknown");
+                const cityDisplay = u.city ? `${u.city}, ` : "";
+                const ipDisplay = u.lastIp ? u.lastIp : "—";
+                const devIcon = getDeviceIcon(u.device);
+                const devType = u.device || "Desktop";
+                const osBrowser = [u.os, u.browser].filter(Boolean).join(" • ") || "Browser";
+
+                const avatarHtml = u.picture
+                    ? `<img
+                           src="${u.picture}"
+                           alt="${u.name || "User"}"
+                           class="admin-table-avatar"
+                           onerror="this.onerror=null;this.src='${DEFAULT_AVATAR_DATA_URI}'"
+                       />`
+                    : `<div class="admin-table-avatar-fallback ${u.isGuest ? 'guest' : ''}">
+                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke-linecap="round" stroke-linejoin="round"/>
+                               <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
+                           </svg>
+                       </div>`;
 
                 return `
                     <tr class="admin-user-row">
                         <td class="text-gray-500 font-mono text-xs">${index + 1}</td>
                         <td>
                             <div class="flex items-center gap-2.5">
-                                <img
-                                    src="${u.picture || "/favicon.png"}"
-                                    alt="${u.name || "User"}"
-                                    class="admin-table-avatar"
-                                    onerror="this.src='/favicon.png'"
-                                />
+                                ${avatarHtml}
                                 <div class="flex flex-col">
                                     <span class="admin-table-name font-medium text-white flex items-center gap-1.5">
                                         ${u.name || (u.isGuest ? `Guest ${u.guestNumber ?? ""}` : "Anonymous")}
@@ -497,6 +558,28 @@ export default class Profile {
                                     </span>
                                     <span class="text-[11px] text-gray-500 font-mono">ID: #${u.id}</span>
                                 </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="admin-geo-pill">
+                                    <span class="text-sm leading-none">${flag}</span>
+                                    <span class="font-medium text-slate-200 text-xs">${countryDisplay}</span>
+                                </span>
+                                <span class="text-[11px] text-gray-400 mt-0.5">
+                                    ${cityDisplay}<span class="font-mono text-gray-500 text-[10px]">${ipDisplay}</span>
+                                </span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="admin-device-pill">
+                                    <span>${devIcon}</span>
+                                    <span class="font-medium text-slate-200 text-xs">${devType}</span>
+                                </span>
+                                <span class="text-[11px] text-gray-400 mt-0.5 truncate max-w-[130px]" title="${osBrowser}">
+                                    ${osBrowser}
+                                </span>
                             </div>
                         </td>
                         <td class="text-gray-300 font-mono text-xs select-all">
@@ -520,7 +603,7 @@ export default class Profile {
                                 <strong>${u.uploadsCount.toLocaleString()}</strong>
                             </span>
                         </td>
-                        <td class="text-right text-gray-400 text-xs">
+                        <td class="text-right text-gray-400 font-mono text-xs whitespace-nowrap">
                             ${formattedDate}
                         </td>
                     </tr>

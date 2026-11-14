@@ -80,6 +80,13 @@ model User {
   guestNumber Int?     @unique
   browserId   String?
   lastIp      String?
+  country     String?
+  countryCode String?
+  city        String?
+  device      String?
+  os          String?
+  browser     String?
+  userAgent   String?
 
   reactions VideoReaction[]
   uploadedVideos    Video[]    @relation("UserUploadedVideos")
