@@ -440,6 +440,7 @@ class Players {
     }
 
     private async navigateBack(section: SectionId = 1) {
+        if (this.pendingSwap[section]) return;
         if (!this.state.canGoBack()) {
             console.log("No previous video in history");
             return;
@@ -448,31 +449,52 @@ class Players {
         const prevVideoId = this.state.getPreviousVideoId();
         if (!prevVideoId) return;
 
+        this.pendingSwap[section] = true;
         console.log(`↩ Navigating back to previous video: ${prevVideoId}`);
 
-        const [frontIndex, backIndex] = this.getSectionPlayerIndexes(section);
-        const activeIndex = this.state.active[frontIndex] ? frontIndex : backIndex;
-        const inactiveIndex = activeIndex === frontIndex ? backIndex : frontIndex;
+        try {
+            const [frontIndex, backIndex] = this.getSectionPlayerIndexes(section);
+            const activeIndex = this.state.active[frontIndex] ? frontIndex : backIndex;
+            const nextIndex = activeIndex === frontIndex ? backIndex : frontIndex;
 
-        const activePlayer = this.html.videoPlayers[activeIndex];
-        const inactivePlayer = this.html.videoPlayers[inactiveIndex];
+            const currentPlayer = this.html.videoPlayers[activeIndex];
+            const nextPlayer = this.html.videoPlayers[nextIndex];
 
-        // Configure and play previous video immediately on the current active surface
-        this.configurePlayer(activePlayer, prevVideoId, "auto");
-        await this.waitForVideoReady(activePlayer);
-        await this.playPlayer(activePlayer, activeIndex);
-        this.state.playing[activeIndex] = true;
-        this.updatePlayPauseIcon(true);
+            // Configure standby player with previous video and perform smooth dual-slot swap
+            this.configurePlayer(nextPlayer, prevVideoId, "auto");
+            const ready = await this.waitForVideoReady(nextPlayer);
 
-        this.getVideoMetadata(prevVideoId)
-            .then((meta) => this.populateMetadataForm(section, meta))
-            .catch((err) => console.error(err));
+            if (ready) {
+                await this.playPlayer(nextPlayer, nextIndex);
+                this.setSectionActivePlayer(section, nextIndex);
+                this.state.playing[nextIndex] = true;
+                this.updatePlayPauseIcon(true);
+                currentPlayer.pause();
 
-        // Pre-queue the video that comes after prevVideoId in history
-        const nextVideoId = this.state.peekNextQueuedVideoId(prevVideoId, section);
-        if (nextVideoId && nextVideoId !== 0) {
-            this.queuePlayer(inactivePlayer, nextVideoId);
-            void this.waitForVideoReady(inactivePlayer);
+                this.getVideoMetadata(prevVideoId)
+                    .then((meta) => this.populateMetadataForm(section, meta))
+                    .catch((err) => console.error(err));
+
+                // Pre-queue the video that comes after prevVideoId in forward history on currentPlayer
+                const nextForwardId = this.state.peekNextQueuedVideoId(prevVideoId, section);
+                if (nextForwardId && nextForwardId !== 0) {
+                    this.queuePlayer(currentPlayer, nextForwardId);
+                    void this.waitForVideoReady(currentPlayer);
+                }
+            } else {
+                // Fallback: configure on active player directly if standby load timed out
+                this.configurePlayer(currentPlayer, prevVideoId, "auto");
+                await this.waitForVideoReady(currentPlayer);
+                await this.playPlayer(currentPlayer, activeIndex);
+                this.state.playing[activeIndex] = true;
+                this.updatePlayPauseIcon(true);
+
+                this.getVideoMetadata(prevVideoId)
+                    .then((meta) => this.populateMetadataForm(section, meta))
+                    .catch((err) => console.error(err));
+            }
+        } finally {
+            this.pendingSwap[section] = false;
         }
     }
 
@@ -489,7 +511,8 @@ class Players {
                 navLeft.style.transition = 'transform 0.1s';
                 navLeft.style.transform = 'scale(0.85)';
                 setTimeout(() => navLeft.style.transform = 'scale(1)', 150);
-                await this.navigateBack(1);
+                const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+                await this.navigateBack(section);
             });
         }
 
@@ -509,8 +532,10 @@ class Players {
                 navRight.style.transition = 'transform 0.1s';
                 navRight.style.transform = 'scale(0.85)';
                 setTimeout(() => navRight.style.transform = 'scale(1)', 150);
-                if (this.state.active[0]) this.handlePlayerEnded(0 as PlayerIndex);
-                else if (this.state.active[1]) this.handlePlayerEnded(1 as PlayerIndex);
+                const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+                const [frontIdx, backIdx] = this.getSectionPlayerIndexes(section);
+                const activeIdx = this.state.active[frontIdx] ? frontIdx : backIdx;
+                void this.handlePlayerEnded(activeIdx);
             });
         }
 

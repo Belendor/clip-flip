@@ -28,7 +28,7 @@ export const config = {
     videoSourcePathNew:  videoPathNew,
     thumbnailSourcePath: thumbnailPath,
     videoThumbnailPath:  videoThumbnailPath,
-    defaultPercentChance: 25,
+    defaultPercentChance: 100,
     defaultEndIndex:     endIndex,
     apiUrl:              apiURL,
     multiSection:        false,

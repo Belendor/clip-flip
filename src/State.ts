@@ -149,6 +149,8 @@ class State {
                     chosenId = lastId;
                 } else if (unwatched.length > 0) {
                     chosenId = unwatched[Math.floor(Math.random() * unwatched.length)].id;
+                } else if (cachedVideos.length > 0) {
+                    chosenId = cachedVideos[Math.floor(Math.random() * cachedVideos.length)].id;
                 }
 
                 if (chosenId) {
@@ -221,13 +223,29 @@ class State {
     }
 
     getPlayedVideos(): Set<number> {
-        const raw = localStorage.getItem(this.PLAYED_KEY);
-        return new Set(raw ? JSON.parse(raw) : []);
+        try {
+            const raw = localStorage.getItem(this.PLAYED_KEY);
+            return new Set(raw ? JSON.parse(raw) : []);
+        } catch (_) {
+            return new Set();
+        }
+    }
+
+    savePlayedVideos(): void {
+        try {
+            localStorage.setItem(this.PLAYED_KEY, JSON.stringify([...this.played]));
+        } catch (_) {}
     }
 
     markVideoAsPlayed(id: number) {
+        if (!id || id <= 0) return;
         this.played.add(id);
-        localStorage.setItem(this.PLAYED_KEY, JSON.stringify([...this.played]));
+        // Keep played set bounded to prevent permanent library exhaustion
+        if (this.played.size > 500) {
+            const arr = [...this.played];
+            this.played = new Set(arr.slice(arr.length - 300));
+        }
+        this.savePlayedVideos();
     }
 
     clearPlayedVideos() {
@@ -413,29 +431,53 @@ class State {
             : defaultPool;
 
         if (sectionPool.length > 0) {
-            const pool = this.randomized
-                ? sectionPool.filter((video) => !this.played.has(video.id))
-                : sectionPool;
-            const availableTagged = pool.length > 0 ? pool : sectionPool;
-            if (availableTagged.length === 0) return 0;
+            // In random mode (or when randomized flag is true), pick a true random video with repeat prevention
+            if (this.state === "random" || this.randomized) {
+                // Candidates excluding the currently playing video
+                let unplayed = sectionPool.filter((v) => !this.played.has(v.id) && v.id !== currentId);
 
-            if (this.randomized) {
-                const roll = Math.random() * 100;
-                if (roll < this.percentChance) {
-                    const randomVideo = availableTagged[Math.floor(Math.random() * availableTagged.length)];
-                    return randomVideo.id;
+                // In multiSection mode, also avoid clips currently playing on other screens
+                if (this.multiSection) {
+                    const otherScreens = new Set(
+                        ([1, 2, 3, 4] as SectionId[])
+                            .filter((s) => s !== section)
+                            .map((s) => this.positions[s])
+                            .filter((id) => id && id > 0)
+                    );
+                    const candidatesWithoutOtherScreens = unplayed.filter((v) => !otherScreens.has(v.id));
+                    if (candidatesWithoutOtherScreens.length > 0) {
+                        unplayed = candidatesWithoutOtherScreens;
+                    }
                 }
+
+                // If all candidate videos in this pool have been played, recycle the pool!
+                if (unplayed.length === 0) {
+                    sectionPool.forEach((v) => {
+                        if (v.id !== currentId) {
+                            this.played.delete(v.id);
+                        }
+                    });
+                    this.savePlayedVideos();
+                    unplayed = sectionPool.filter((v) => v.id !== currentId);
+                }
+
+                // Select a truly random clip from the unplayed pool
+                if (unplayed.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * unplayed.length);
+                    return unplayed[randomIndex].id;
+                }
+
+                // If sectionPool has only 1 video total, return it
+                return sectionPool[0]?.id ?? 0;
             }
 
-            const videoIds = availableTagged.map((video) => video.id);
+            // Sequential fallback when randomized is explicitly false
+            const videoIds = sectionPool.map((video) => video.id);
             const currentIndex = videoIds.indexOf(currentId);
             if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
                 return videoIds[currentIndex + 1];
-            } else if (currentIndex >= 0 && currentIndex + 1 >= videoIds.length) {
-                return videoIds[0];
-            } else {
-                return videoIds[0];
             }
+            return videoIds[0] ?? 0;
         }
 
         return 0;
@@ -540,14 +582,21 @@ class State {
                 this.likedVideos = likedOnly;
 
                 if (!this.positions[1] || this.positions[1] === 0) {
-                    if (unwatchedVideos.length === 0) {
+                    let candidates = unwatchedVideos;
+                    if (candidates.length === 0 && videos.length > 0) {
+                        videos.forEach((v) => this.played.delete(v.id));
+                        this.savePlayedVideos();
+                        candidates = videos;
+                    }
+
+                    if (candidates.length === 0) {
                         this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
                         return;
                     }
 
-                    const initialVideo = this.randomized
-                        ? unwatchedVideos[Math.floor(Math.random() * unwatchedVideos.length)]
-                        : unwatchedVideos[0];
+                    const initialVideo = (this.randomized || this.state === "random")
+                        ? candidates[Math.floor(Math.random() * candidates.length)]
+                        : candidates[0];
 
                     this.positions = {
                         1: initialVideo.id,
@@ -588,7 +637,13 @@ class State {
 
         try {
             const videos = await this.api.fetchVideosByTags(tags, this.endIndex);
-            const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
+            let unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
+            if (unwatchedVideos.length === 0 && videos && videos.length > 0) {
+                // Recycle tag pool if all clips have been watched
+                videos.forEach((v) => this.played.delete(v.id));
+                this.savePlayedVideos();
+                unwatchedVideos = [...videos];
+            }
             this.taggedVideosBySection.set(section, unwatchedVideos);
             if (!this.multiSection) {
                 this.taggedVideos = unwatchedVideos;
