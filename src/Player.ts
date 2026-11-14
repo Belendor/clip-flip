@@ -15,6 +15,8 @@ class Players {
     private isSwitchingMode = false;
 
     private loadRevision = 0;
+    private sectionLoadRevision: Record<SectionId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    private focusedSection: SectionId = 1;
     private muted = true;
     private volume = 0.5;
     private searchAbortController: AbortController | null = null;
@@ -140,7 +142,10 @@ class Players {
         }
 
         const sections = this.getVisibleSections();
-        const results = await Promise.all(sections.map(section => this.loadSection(section, revision)));
+        const results = await Promise.all(sections.map(section => {
+            const secRev = ++this.sectionLoadRevision[section];
+            return this.loadSection(section, secRev);
+        }));
 
         if (revision !== this.loadRevision) return;
         if (results.some(result => !result)) {
@@ -159,6 +164,8 @@ class Players {
             pool = this.state.likedVideos.map((v) => v.id);
         } else if (this.state.state === "trending" && this.state.trendingVideos?.length) {
             pool = this.state.trendingVideos.map((v) => v.id);
+        } else if (this.state.allVideos?.length) {
+            pool = this.state.allVideos.map((v) => v.id);
         } else if (this.state.taggedVideos?.length) {
             pool = this.state.taggedVideos.map((v) => v.id);
         }
@@ -237,7 +244,7 @@ class Players {
 
         while (currentVideoId !== 0) {
             this.configurePlayer(frontPlayer, currentVideoId, "auto");
-            if (revision !== this.loadRevision) return false;
+            if (revision !== this.sectionLoadRevision[section]) return false;
 
             const ready = await this.waitForVideoReady(frontPlayer);
             if (ready) {
@@ -251,17 +258,19 @@ class Players {
         }
 
         if (!videoLoaded || currentVideoId === 0) {
-            this.state.markEmpty();
+            if (!this.state.multiSection) {
+                this.state.markEmpty();
+            }
             return false;
         }
 
         await this.playPlayer(frontPlayer, frontIndex);
-        if (revision !== this.loadRevision) return false;
+        if (revision !== this.sectionLoadRevision[section]) return false;
 
-        this.state.recordPlayedVideo(currentVideoId);
+        this.state.recordPlayedVideo(currentVideoId, section);
 
         const currentMetadata = await this.getVideoMetadata(currentVideoId, true);
-        if (revision !== this.loadRevision) return false;
+        if (revision !== this.sectionLoadRevision[section]) return false;
 
         if (this.state.adminMode && currentMetadata?.reactions?.length) {
             if (currentMetadata?.reactions?.length > 0) { return this.loadSection(section, revision); }
@@ -613,6 +622,11 @@ class Players {
             this.html.multiscreenButton.classList.toggle("is-active", this.state.multiSection);
             if (this.state.multiSection) {
                 this.state.sectionIds = [1, 2, 3, 4];
+                [1, 2, 3, 4].forEach((s) => {
+                    if (!this.state.activeTags.has(s as SectionId)) {
+                        this.state.activeTags.set(s as SectionId, s === 1 ? (this.state.activeTags.get(1) || []) : []);
+                    }
+                });
                 Array.from(document.getElementsByClassName("player")).forEach((player) => {
                     (player as HTMLElement).style.objectFit = "cover";
                 });
@@ -626,6 +640,15 @@ class Players {
             this.html.init();
             this.html.metadata.init();
             this.loadVideos();
+        });
+
+        [1, 2, 3, 4].forEach((s) => {
+            const secEl = document.getElementById(`section-${s}`);
+            if (secEl) {
+                secEl.addEventListener("pointerdown", () => {
+                    this.focusedSection = s as SectionId;
+                }, { passive: true });
+            }
         });
 
         this.attachSearchListeners();
@@ -934,6 +957,10 @@ class Players {
                 }
                 nextVideoId = await this.state.takeNextVideoId(section);
                 if (nextVideoId === 0) {
+                    if (this.state.multiSection) {
+                        this.resetPlayer(nextPlayer);
+                        return;
+                    }
                     this.state.markEmpty();
                     this.showNoVideosBox();
                     return;
@@ -948,7 +975,7 @@ class Players {
             this.updatePlayPauseIcon(true);
             currentPlayer.pause();
 
-            this.state.recordPlayedVideo(nextVideoId);
+            this.state.recordPlayedVideo(nextVideoId, section);
 
             this.getVideoMetadata(nextVideoId)
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))
@@ -1129,8 +1156,9 @@ class Players {
         const activeTags = this.state.activeTags.get(section) ?? [];
         if (activeTags.length === 0) return false;
 
+        const defaultPool = this.state.allVideos && this.state.allVideos.length > 0 ? this.state.allVideos : this.state.taggedVideos;
         const pool = this.state.multiSection
-            ? (this.state.taggedVideosBySection.get(section) ?? this.state.taggedVideos)
+            ? (this.state.taggedVideosBySection.get(section) ?? defaultPool)
             : this.state.taggedVideos;
         if (!pool || pool.length === 0) return false;
 
@@ -1236,7 +1264,9 @@ class Players {
     }
 
     async toggleTag(tag: string, reset = true, targetSection?: SectionId): Promise<void> {
-        const section: SectionId = (this.state.multiSection && targetSection) ? targetSection : 1;
+        const section: SectionId = (this.state.multiSection && targetSection)
+            ? targetSection
+            : (this.state.multiSection ? this.focusedSection : 1);
 
         if (this.state.multiSection) {
             // ONLY toggle for this specific screen/section
@@ -1259,7 +1289,13 @@ class Players {
 
             if (!reset) return;
 
-            this.metadataCache.clear();
+            const activeIndex = this.getActiveIndexForSection(section);
+            const activePlayer = this.html.videoPlayers[activeIndex];
+            const currentVideoId = this.getPlayerVideoId(activePlayer);
+            if (currentVideoId) {
+                this.metadataCache.delete(currentVideoId);
+            }
+
             await this.state.fetchVideosByTags(section);
 
             if (await this.tryPreserveCurrentVideoOnTagChange(section)) {
@@ -1267,7 +1303,8 @@ class Players {
             }
 
             // Only reload the targeted section!
-            await this.loadSection(section, ++this.loadRevision);
+            const secRev = ++this.sectionLoadRevision[section];
+            await this.loadSection(section, secRev);
         } else {
             // Single-screen mode: toggle for section 1
             const currentTags = this.state.activeTags.get(1) || [];

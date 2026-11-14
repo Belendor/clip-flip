@@ -32,6 +32,7 @@ class State {
         4: false, 5: false, 6: false, 7: false,
     };
     apiUrl = config.apiUrl;
+    allVideos: Video[] = [];
     taggedVideos: Video[] | null = null;
     taggedVideosBySection: Map<SectionId, Video[]> = new Map();
     trendingVideos: Video[] | null = null;
@@ -95,6 +96,7 @@ class State {
                 this.hasCachedData = true;
                 const unwatched = cachedVideos.filter(v => !this.played.has(v.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatched;
+                this.allVideos = unwatched;
 
                 // Prepare trending videos (highest rated first, natural ascending ID for ties)
                 const sorted = [...cachedVideos].sort((a: any, b: any) => {
@@ -202,7 +204,8 @@ class State {
 
     resetActiveTags(tags: string[] = []) {
         const uniqueTags = [...new Set(tags)];
-        this.sectionIds.forEach((sectionId) => {
+        const allSections: SectionId[] = [1, 2, 3, 4];
+        allSections.forEach((sectionId) => {
             this.activeTags.set(sectionId, [...uniqueTags]);
         });
     }
@@ -295,8 +298,15 @@ class State {
         }
     }
 
-    recordPlayedVideo(videoId: number): void {
+    recordPlayedVideo(videoId: number, section: SectionId = 1): void {
         if (!videoId || videoId === 0) return;
+
+        this.positions[section] = videoId;
+
+        // In multisection mode, history navigation is scoped to section 1 only
+        if (this.multiSection && section !== 1) {
+            return;
+        }
 
         // If this video is already the current entry in history, do nothing
         if (this.historyIndex >= 0 && this.history[this.historyIndex] === videoId) {
@@ -395,9 +405,12 @@ class State {
         // Tagged / DB videos for this specific section
         const sectionTags = this.activeTags.get(section);
         const hasSectionTags = !!sectionTags && sectionTags.length > 0;
+        const defaultPool = this.multiSection
+            ? (this.allVideos && this.allVideos.length > 0 ? this.allVideos : (this.taggedVideos || []))
+            : (this.taggedVideos || []);
         const sectionPool = hasSectionTags
             ? (this.taggedVideosBySection.get(section) || [])
-            : (this.taggedVideos || []);
+            : defaultPool;
 
         if (sectionPool.length > 0) {
             const pool = this.randomized
@@ -459,6 +472,10 @@ class State {
             const found = pool.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
         }
+        if (this.allVideos && this.allVideos.length > 0) {
+            const found = this.allVideos.find((v) => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
         if (this.taggedVideos) {
             const found = this.taggedVideos.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
@@ -482,8 +499,12 @@ class State {
             if (idx >= 0) list[idx] = { ...list[idx], ...video };
         };
         replaceInList(this.taggedVideos);
+        replaceInList(this.allVideos);
         replaceInList(this.trendingVideos);
         replaceInList(this.likedVideos);
+        for (const pool of this.taggedVideosBySection.values()) {
+            replaceInList(pool);
+        }
         if (this.newVideos) {
             const idx = this.newVideos.findIndex(v => v.id === video.id);
             if (idx >= 0) this.newVideos[idx] = { ...this.newVideos[idx], ...video };
@@ -499,6 +520,7 @@ class State {
                 void dbCache.set("cached_all_videos", videos);
                 const unwatchedVideos = videos.filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatchedVideos;
+                this.allVideos = unwatchedVideos;
 
                 const sorted = [...videos].sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
@@ -555,7 +577,7 @@ class State {
             if (!this.multiSection) {
                 await this.fetchAllVideos();
             } else {
-                const defaultPool = this.taggedVideos || [];
+                const defaultPool = this.allVideos && this.allVideos.length > 0 ? this.allVideos : (this.taggedVideos || []);
                 if (defaultPool.length > 0) {
                     const randomVideo = defaultPool[Math.floor(Math.random() * defaultPool.length)];
                     this.positions[section] = randomVideo.id;
@@ -568,7 +590,7 @@ class State {
             const videos = await this.api.fetchVideosByTags(tags, this.endIndex);
             const unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
             this.taggedVideosBySection.set(section, unwatchedVideos);
-            if (!this.multiSection || section === 1) {
+            if (!this.multiSection) {
                 this.taggedVideos = unwatchedVideos;
             }
 
@@ -582,7 +604,7 @@ class State {
         } catch (error) {
             console.error(`Failed to fetch videos for section ${section} with tags`, tags, error);
             this.taggedVideosBySection.set(section, []);
-            if (!this.multiSection || section === 1) {
+            if (!this.multiSection) {
                 this.taggedVideos = [];
             }
             this.positions[section] = 0;
