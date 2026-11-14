@@ -123,6 +123,15 @@ export default class VideoApi {
         }
     }
 
+    async updateUserPreferences(payload: { preference?: string; blacklist?: string[]; userId?: number }): Promise<{ success: boolean; preference?: string; blacklist?: string[] }> {
+        return this.request<{ success: boolean; preference?: string; blacklist?: string[] }>("/user/preferences", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(payload),
+        });
+    }
+
     async react(videoId: number, type: "like") {
         const res = await fetch(`${config.apiUrl}/videos/${videoId}/reaction`, {
             method: "POST",

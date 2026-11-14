@@ -4,6 +4,7 @@ import { config } from "./config";
 import VideoApi from "./VideoApi";
 import type { Tag, Video, VideoWithRelations, UpdateVideoPayload, NewVideo } from "./types";
 import User from "./User";
+import { isNsfwAccepted, showNsfwModal } from "./NsfwModal";
 
 type SectionSwapState = Record<SectionId, boolean>;
 
@@ -61,6 +62,9 @@ class Players {
         this.attachMetadataTabListeners();
         this.user.onAuthChange = async (user) => {
             this.updateUploadButtonState();
+            if (user?.blacklist && Array.isArray(user.blacklist)) {
+                this.state.setBlacklistTags(user.blacklist);
+            }
             if (!user && (this.state.state === "new" || this.state.state === "liked")) {
                 await this.switchMode("trending");
                 return;
@@ -113,6 +117,19 @@ class Players {
             this.showLoader();
             await Promise.all([this.state.tagsPromise, this.state.taggedVideosPromise]);
             await this.loadVideos(true);
+        }
+
+        if (!isNsfwAccepted()) {
+            showNsfwModal(this.state, this.api, this.user, async () => {
+                const activeIdx = this.getActiveIndexForSection(1);
+                const currentId = this.getPlayerVideoId(this.html.videoPlayers[activeIdx]);
+                if (currentId) {
+                    const metadata = await this.getVideoMetadata(currentId);
+                    if (this.state.isBlacklisted(metadata)) {
+                        await this.loadVideos(false);
+                    }
+                }
+            });
         }
     }
 

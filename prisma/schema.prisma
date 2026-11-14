@@ -87,6 +87,8 @@ model User {
   os          String?
   browser     String?
   userAgent   String?
+  preference  String?
+  blacklist   String?
 
   reactions VideoReaction[]
   uploadedVideos    Video[]    @relation("UserUploadedVideos")

@@ -20,6 +20,8 @@ export interface AuthUser {
     device?: string | null;
     os?: string | null;
     browser?: string | null;
+    preference?: string | null;
+    blacklist?: string[];
     isAdmin?: boolean;
     likesCount?: number;
     uploadsCount?: number;

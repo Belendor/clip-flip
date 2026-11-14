@@ -491,19 +491,40 @@ app.get("/seo-tags/:tag", async (req: Request, res: Response) => {
 app.get("/videos", async (req: Request, res: Response) => {
   const search = req.query.search?.toString() || "";
   const sort = req.query.sort?.toString() || "";
-  const userId = Number(req.cookies.userId);
+  const rawUserId = req.cookies.userId || req.headers["x-user-id"];
+  const userId = Number(rawUserId);
+
+  let blacklistTags: string[] = [];
+  if (userId && !isNaN(userId)) {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: userId }, select: { blacklist: true } });
+      if (u?.blacklist) blacklistTags = JSON.parse(u.blacklist);
+    } catch (_) {}
+  }
+
+  const whereClause: any = {};
+  if (search) {
+    whereClause.OR = [
+      { title: { contains: search } },
+      { studio: { contains: search } },
+      { models: { some: { name: { contains: search } } } },
+      { tags: { some: { title: { contains: search } } } },
+    ];
+  }
+  if (blacklistTags.length > 0) {
+    whereClause.NOT = {
+      tags: {
+        some: {
+          title: {
+            in: blacklistTags,
+          },
+        },
+      },
+    };
+  }
 
   const videos = await prisma.video.findMany({
-    where: search
-      ? {
-        OR: [
-          { title: { contains: search } },
-          { studio: { contains: search } },
-          { models: { some: { name: { contains: search } } } },
-          { tags: { some: { title: { contains: search } } } },
-        ],
-      }
-      : undefined,
+    where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
     include: {
       tags: true,
       models: true,
@@ -628,18 +649,41 @@ app.get('/tags', async (req, res) => {
 
 app.post('/videos/by-tags', async (req, res) => {
   const { tags } = req.body;
+  const rawUserId = req.cookies.userId || req.headers["x-user-id"];
+  const userId = Number(rawUserId);
+
+  let blacklistTags: string[] = [];
+  if (userId && !isNaN(userId)) {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: userId }, select: { blacklist: true } });
+      if (u?.blacklist) blacklistTags = JSON.parse(u.blacklist);
+    } catch (_) {}
+  }
+
   if (!Array.isArray(tags) || tags.length === 0) {
     return res.status(400).json({ error: 'Tags must be a non-empty array' });
   }
   try {
+    const whereClause: any = {
+      AND: tags.map(tagTitle => ({
+        tags: {
+          some: { title: tagTitle }
+        }
+      }))
+    };
+    if (blacklistTags.length > 0) {
+      whereClause.NOT = {
+        tags: {
+          some: {
+            title: {
+              in: blacklistTags,
+            },
+          },
+        },
+      };
+    }
     const videos = await prisma.video.findMany({
-      where: {
-        AND: tags.map(tagTitle => ({
-          tags: {
-            some: { title: tagTitle }
-          }
-        }))
-      },
+      where: whereClause,
       include: {
         tags: true,
         models: true
@@ -2039,12 +2083,58 @@ app.get("/auth/me", async (req, res) => {
         uploadsCount,
         approvedUploads,
         pendingUploads,
+        preference: user.preference || null,
+        blacklist: user.blacklist ? JSON.parse(user.blacklist) : [],
         createdAt: user.createdAt,
       },
     });
   } catch (err) {
     console.error("Error in /auth/me:", err);
     return res.status(500).json({ error: "Failed to authenticate" });
+  }
+});
+
+app.post("/user/preferences", async (req: Request, res: Response) => {
+  try {
+    const { preference, blacklist } = req.body;
+    const rawUserId = req.cookies.userId || req.headers["x-user-id"] || req.body.userId;
+    const userId = Number(rawUserId);
+    const browserId = req.cookies.cf_bid || req.body.browserId;
+
+    let user = null;
+    if (userId && !isNaN(userId)) {
+      user = await prisma.user.findUnique({ where: { id: userId } });
+    } else if (browserId) {
+      user = await prisma.user.findFirst({ where: { browserId } });
+    }
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const updates: any = {};
+    if (typeof preference === "string") {
+      updates.preference = preference;
+    }
+    if (Array.isArray(blacklist)) {
+      updates.blacklist = JSON.stringify(blacklist);
+    } else if (typeof blacklist === "string") {
+      updates.blacklist = blacklist;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: updates,
+    });
+
+    return res.json({
+      success: true,
+      preference: updatedUser.preference,
+      blacklist: updatedUser.blacklist ? JSON.parse(updatedUser.blacklist) : [],
+    });
+  } catch (err) {
+    console.error("Error updating user preferences:", err);
+    return res.status(500).json({ error: "Failed to update preferences" });
   }
 });
 
@@ -2087,6 +2177,8 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
           device: true,
           os: true,
           browser: true,
+          preference: true,
+          blacklist: true,
           createdAt: true,
           updatedAt: true,
           reactions: {
@@ -2122,6 +2214,8 @@ app.get("/admin/stats", async (req: Request, res: Response) => {
         device: u.device,
         os: u.os,
         browser: u.browser,
+        preference: u.preference || null,
+        blacklist: u.blacklist ? JSON.parse(u.blacklist) : [],
         createdAt: u.createdAt,
         updatedAt: u.updatedAt,
         likesCount: u.reactions.length,

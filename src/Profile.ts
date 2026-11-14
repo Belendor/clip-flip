@@ -1,5 +1,6 @@
 import User, { AuthUser } from "./User";
 import VideoApi from "./VideoApi";
+import State from "./State";
 
 export interface AdminUserRecord {
     id: number;
@@ -23,6 +24,8 @@ export interface AdminUserRecord {
     device?: string | null;
     os?: string | null;
     browser?: string | null;
+    preference?: string | null;
+    blacklist?: string[];
 }
 
 function getCountryFlag(code?: string | null): string {
@@ -67,6 +70,7 @@ export interface AdminStatsData {
 export default class Profile {
     private user: User;
     private api: VideoApi;
+    private state?: State;
     private container: HTMLElement | null = null;
     private isOpen: boolean = false;
     private onOpenCallback?: () => void;
@@ -76,12 +80,14 @@ export default class Profile {
     constructor(
         user: User,
         api: VideoApi,
+        state?: State,
         onOpen?: () => void,
         onClose?: () => void,
         onWatchFavorites?: () => void
     ) {
         this.user = user;
         this.api = api;
+        this.state = state;
         this.onOpenCallback = onOpen;
         this.onCloseCallback = onClose;
         this.onWatchFavoritesCallback = onWatchFavorites;
@@ -335,12 +341,44 @@ export default class Profile {
             this.user.openAuthModal("register");
         });
 
+        document.getElementById("profile-pref-toggle-btn")?.addEventListener("click", async () => {
+            const currentPref = currentUser.preference || localStorage.getItem("clipflip_preference") || "straight";
+            const nextPref = currentPref === "straight" ? "trans" : "straight";
+            const nextBlacklist = nextPref === "straight" ? ["shemale"] : [];
+
+            currentUser.preference = nextPref;
+            currentUser.blacklist = nextBlacklist;
+            try {
+                localStorage.setItem("clipflip_preference", nextPref);
+                localStorage.setItem("clipflip_blacklist_tags", JSON.stringify(nextBlacklist));
+            } catch (_) {}
+
+            if (this.state) {
+                this.state.setBlacklistTags(nextBlacklist);
+            }
+
+            try {
+                await this.api.updateUserPreferences({
+                    preference: nextPref,
+                    blacklist: nextBlacklist,
+                    userId: currentUser.id,
+                });
+            } catch (err) {
+                console.warn("Failed to update user preference:", err);
+            }
+
+            this.render();
+        });
+
         if (isAdmin) {
             await this.loadAndRenderAdminStats();
         }
     }
 
     private renderRegularProfileContent(user: AuthUser): string {
+        const pref = user.preference || localStorage.getItem("clipflip_preference") || "straight";
+        const isStraight = pref === "straight";
+
         return `
             <div class="profile-section">
                 <h3 class="profile-section-title">My Activity</h3>
@@ -360,6 +398,31 @@ export default class Profile {
                             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                         <span>Watch My Liked Clips</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Preference & Blacklist -->
+            <div class="profile-section mt-6">
+                <h3 class="profile-section-title">Content Preferences</h3>
+                <div class="profile-pref-card">
+                    <div class="profile-pref-info">
+                        <div class="profile-pref-title">
+                            <span>Orientation:</span>
+                            <span class="profile-pref-pill" id="profile-pref-pill">${isStraight ? "Straight (Shemale Blacklisted)" : "Trans / All Library"}</span>
+                        </div>
+                        <p class="profile-pref-desc">
+                            ${isStraight
+                                ? "Clips tagged with 'shemale' are automatically excluded from your feed."
+                                : "All adult content categories are enabled without tag restrictions."
+                            }
+                        </p>
+                    </div>
+                    <button type="button" class="profile-pref-toggle-btn" id="profile-pref-toggle-btn">
+                        <span>Switch to ${isStraight ? "Trans / All" : "Straight"}</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 ml-1">
+                            <path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -491,6 +554,7 @@ export default class Profile {
                     (u.device && u.device.toLowerCase().includes(query)) ||
                     (u.os && u.os.toLowerCase().includes(query)) ||
                     (u.browser && u.browser.toLowerCase().includes(query)) ||
+                    (u.preference && u.preference.toLowerCase().includes(query)) ||
                     String(u.id).includes(query) ||
                     (u.guestNumber != null && String(u.guestNumber).includes(query))
             );
@@ -584,6 +648,7 @@ export default class Profile {
                         </td>
                         <td class="text-gray-300 font-mono text-xs select-all">
                             ${u.email || (u.username ? "@" + u.username : '<span class="text-gray-500 italic">Guest (Unlinked)</span>')}
+                            ${u.preference ? `<div class="text-[10px] text-gray-500 font-sans mt-0.5">${u.preference === "straight" ? "👩‍❤️‍👨 Straight (-shemale)" : "🏳️‍⚧️ Trans (all)"}</div>` : ""}
                         </td>
                         <td class="text-right">
                             <span class="admin-like-pill ${u.likesCount > 0 ? "has-likes" : "zero-likes"}">

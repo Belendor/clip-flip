@@ -53,12 +53,20 @@ class State {
     adminMode = false;
     hasCachedData = false;
     cacheInitPromise: Promise<boolean>;
+    blacklistTags: string[] = [];
 
     constructor(private readonly api: VideoApi) {
         try {
             const savedMode = localStorage.getItem(this.MODE_KEY) as PlayerState | null;
             if (savedMode) {
                 this.state = savedMode === "favorite" ? "liked" : savedMode;
+            }
+        } catch (_) {}
+
+        try {
+            const savedBlacklist = localStorage.getItem("clipflip_blacklist_tags");
+            if (savedBlacklist) {
+                this.blacklistTags = JSON.parse(savedBlacklist);
             }
         } catch (_) {}
 
@@ -94,12 +102,13 @@ class State {
             }
             if (cachedVideos && cachedVideos.length > 0) {
                 this.hasCachedData = true;
-                const unwatched = cachedVideos.filter(v => !this.played.has(v.id)).sort((a, b) => a.id - b.id);
+                const cleanVideos = cachedVideos.filter(v => !this.isBlacklisted(v));
+                const unwatched = cleanVideos.filter(v => !this.played.has(v.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatched;
                 this.allVideos = unwatched;
 
                 // Prepare trending videos (highest rated first, natural ascending ID for ties)
-                const sorted = [...cachedVideos].sort((a: any, b: any) => {
+                const sorted = [...cleanVideos].sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
                     if (likesB !== likesA) return likesB - likesA;
@@ -108,7 +117,7 @@ class State {
                 this.trendingVideos = sorted;
 
                 // Prepare liked videos (most liked first, natural ascending ID for ties)
-                const likedOnly = cachedVideos.filter(v => (v.likes ?? 0) > 0);
+                const likedOnly = cleanVideos.filter(v => (v.likes ?? 0) > 0);
                 likedOnly.sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
@@ -146,11 +155,12 @@ class State {
                     const inLiked = lastId && !this.played.has(lastId) && this.likedVideos.some(v => v.id === lastId);
                     chosenId = inLiked ? lastId : this.likedVideos[0].id;
                 } else if (lastId && !this.played.has(lastId)) {
-                    chosenId = lastId;
+                    const found = cleanVideos.find(v => v.id === lastId);
+                    chosenId = found ? lastId : (unwatched[0]?.id ?? 0);
                 } else if (unwatched.length > 0) {
                     chosenId = unwatched[Math.floor(Math.random() * unwatched.length)].id;
-                } else if (cachedVideos.length > 0) {
-                    chosenId = cachedVideos[Math.floor(Math.random() * cachedVideos.length)].id;
+                } else if (cleanVideos.length > 0) {
+                    chosenId = cleanVideos[Math.floor(Math.random() * cleanVideos.length)].id;
                 }
 
                 if (chosenId) {
@@ -251,6 +261,40 @@ class State {
     clearPlayedVideos() {
         this.played.clear();
         localStorage.removeItem(this.PLAYED_KEY);
+    }
+
+    isBlacklisted(video: any): boolean {
+        if (!this.blacklistTags || this.blacklistTags.length === 0 || !video) return false;
+        const tags = video.tags;
+        if (!Array.isArray(tags)) return false;
+        return tags.some((t: any) => {
+            const title = (typeof t === "string" ? t : t?.title)?.toLowerCase();
+            return title && this.blacklistTags.includes(title);
+        });
+    }
+
+    setBlacklistTags(tags: string[]) {
+        this.blacklistTags = (tags || []).map((t) => t.toLowerCase().trim()).filter(Boolean);
+        try {
+            localStorage.setItem("clipflip_blacklist_tags", JSON.stringify(this.blacklistTags));
+        } catch (_) {}
+
+        // Prune blacklisted videos from existing in-memory pools
+        if (this.allVideos && this.allVideos.length > 0) {
+            this.allVideos = this.allVideos.filter((v) => !this.isBlacklisted(v));
+        }
+        if (this.taggedVideos && this.taggedVideos.length > 0) {
+            this.taggedVideos = this.taggedVideos.filter((v) => !this.isBlacklisted(v));
+        }
+        if (this.trendingVideos && this.trendingVideos.length > 0) {
+            this.trendingVideos = this.trendingVideos.filter((v) => !this.isBlacklisted(v));
+        }
+        if (this.likedVideos && this.likedVideos.length > 0) {
+            this.likedVideos = this.likedVideos.filter((v) => !this.isBlacklisted(v));
+        }
+        for (const [sec, pool] of this.taggedVideosBySection.entries()) {
+            this.taggedVideosBySection.set(sec, pool.filter((v) => !this.isBlacklisted(v)));
+        }
     }
 
     async resetVideoProgress(): Promise<void> {
@@ -430,11 +474,13 @@ class State {
             ? (this.taggedVideosBySection.get(section) || [])
             : defaultPool;
 
-        if (sectionPool.length > 0) {
+        const cleanPool = (sectionPool || []).filter((v) => !this.isBlacklisted(v));
+
+        if (cleanPool.length > 0) {
             // In random mode (or when randomized flag is true), pick a true random video with repeat prevention
             if (this.state === "random" || this.randomized) {
                 // Candidates excluding the currently playing video
-                let unplayed = sectionPool.filter((v) => !this.played.has(v.id) && v.id !== currentId);
+                let unplayed = cleanPool.filter((v) => !this.played.has(v.id) && v.id !== currentId);
 
                 // In multiSection mode, also avoid clips currently playing on other screens
                 if (this.multiSection) {
@@ -452,13 +498,13 @@ class State {
 
                 // If all candidate videos in this pool have been played, recycle the pool!
                 if (unplayed.length === 0) {
-                    sectionPool.forEach((v) => {
+                    cleanPool.forEach((v) => {
                         if (v.id !== currentId) {
                             this.played.delete(v.id);
                         }
                     });
                     this.savePlayedVideos();
-                    unplayed = sectionPool.filter((v) => v.id !== currentId);
+                    unplayed = cleanPool.filter((v) => v.id !== currentId);
                 }
 
                 // Select a truly random clip from the unplayed pool
@@ -467,12 +513,12 @@ class State {
                     return unplayed[randomIndex].id;
                 }
 
-                // If sectionPool has only 1 video total, return it
-                return sectionPool[0]?.id ?? 0;
+                // If cleanPool has only 1 video total, return it
+                return cleanPool[0]?.id ?? 0;
             }
 
             // Sequential fallback when randomized is explicitly false
-            const videoIds = sectionPool.map((video) => video.id);
+            const videoIds = cleanPool.map((video) => video.id);
             const currentIndex = videoIds.indexOf(currentId);
             if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
                 return videoIds[currentIndex + 1];
@@ -560,11 +606,12 @@ class State {
             const videos = await this.api.fetchVideos();
             if (videos && videos.length > 0) {
                 void dbCache.set("cached_all_videos", videos);
-                const unwatchedVideos = videos.filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
+                const cleanVideos = videos.filter((v) => !this.isBlacklisted(v));
+                const unwatchedVideos = cleanVideos.filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatchedVideos;
                 this.allVideos = unwatchedVideos;
 
-                const sorted = [...videos].sort((a: any, b: any) => {
+                const sorted = [...cleanVideos].sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
                     if (likesB !== likesA) return likesB - likesA;
@@ -572,7 +619,7 @@ class State {
                 });
                 this.trendingVideos = sorted;
 
-                const likedOnly = videos.filter((v) => (v.likes ?? 0) > 0);
+                const likedOnly = cleanVideos.filter((v) => (v.likes ?? 0) > 0);
                 likedOnly.sort((a, b) => {
                     const likesA = a.likes ?? 0;
                     const likesB = b.likes ?? 0;
@@ -583,10 +630,10 @@ class State {
 
                 if (!this.positions[1] || this.positions[1] === 0) {
                     let candidates = unwatchedVideos;
-                    if (candidates.length === 0 && videos.length > 0) {
-                        videos.forEach((v) => this.played.delete(v.id));
+                    if (candidates.length === 0 && cleanVideos.length > 0) {
+                        cleanVideos.forEach((v) => this.played.delete(v.id));
                         this.savePlayedVideos();
-                        candidates = videos;
+                        candidates = cleanVideos;
                     }
 
                     if (candidates.length === 0) {
@@ -637,12 +684,13 @@ class State {
 
         try {
             const videos = await this.api.fetchVideosByTags(tags, this.endIndex);
-            let unwatchedVideos = (videos || []).filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
-            if (unwatchedVideos.length === 0 && videos && videos.length > 0) {
+            const cleanVideos = (videos || []).filter((v) => !this.isBlacklisted(v));
+            let unwatchedVideos = cleanVideos.filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
+            if (unwatchedVideos.length === 0 && cleanVideos.length > 0) {
                 // Recycle tag pool if all clips have been watched
-                videos.forEach((v) => this.played.delete(v.id));
+                cleanVideos.forEach((v) => this.played.delete(v.id));
                 this.savePlayedVideos();
-                unwatchedVideos = [...videos];
+                unwatchedVideos = [...cleanVideos];
             }
             this.taggedVideosBySection.set(section, unwatchedVideos);
             if (!this.multiSection) {

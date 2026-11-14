@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     new Profile(
         user,
         api,
+        state,
         () => {
             // Pause players on profile open
             html.videoPlayers.forEach((p) => {
