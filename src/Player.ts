@@ -158,6 +158,18 @@ class Players {
             }
         }
 
+        if (this.state.state === "new" && (!this.state.newVideos || this.state.newVideos.length === 0)) {
+            this.hideLoader();
+            this.showNoVideosBox();
+            return;
+        }
+
+        if ((this.state.state === "liked" || this.state.state === "favorite") && (!this.state.likedVideos || this.state.likedVideos.length === 0)) {
+            this.hideLoader();
+            this.showNoVideosBox();
+            return;
+        }
+
         const sections = this.getVisibleSections();
         const results = await Promise.all(sections.map(section => {
             const secRev = ++this.sectionLoadRevision[section];
@@ -257,6 +269,14 @@ class Players {
         if (!currentVideoId || currentVideoId === 0) {
             currentVideoId = await this.state.takeNextVideoId(section);
         }
+
+        if (currentVideoId === 0) {
+            if (!this.state.multiSection) {
+                this.state.markEmpty();
+            }
+            return false;
+        }
+
         let videoLoaded = false;
 
         while (currentVideoId !== 0) {
@@ -920,7 +940,6 @@ class Players {
         if (!this.metadataCache.has(videoId) || refresh) {
             if (this.state.state == "new") {
                 const newVideo = this.state?.newVideos?.find((video) => video.id === videoId) || null;
-                if (!newVideo) throw new Error(`New video with ID ${videoId} not found in state`);
                 this.metadataCache.set(videoId, Promise.resolve(newVideo));
             } else {
                 const fromState = this.state.getVideoById(videoId);
@@ -1272,7 +1291,13 @@ class Players {
         tagsBox.innerHTML = "";
         const activeTagList = this.state.activeTags.get(1) ?? [];
 
-        if (activeTagList.length > 0) {
+        if (this.state.state === "new") {
+            if (title) title.innerHTML = "No new clips waiting for review.<br><span class='text-sm text-gray-400'>Crawl or upload new clips to review and tag them here.</span>";
+            resetWrapper.style.display = "none";
+        } else if (this.state.state === "liked" || this.state.state === "favorite") {
+            if (title) title.innerHTML = "No liked videos yet.<br><span class='text-sm text-gray-400'>Click the heart or thumbs-up icon on any clip to save it to your favorites.</span>";
+            resetWrapper.style.display = "none";
+        } else if (activeTagList.length > 0) {
             if (title) title.innerHTML = "No more videos found for selected tags.<br>Select a tag below to remove it.";
             const uniqueTags = [...new Set(activeTagList)].map((title) => ({ title }));
             void this.html.renderTags(tagsBox, uniqueTags, 1, undefined, async (tag) => {

@@ -1188,9 +1188,10 @@ app.post(
         }
       }
 
-      const { segments, tagId, userId: metaUserId } = JSON.parse(req.body.metadata) as {
+      const { segments, tagId, tags: metaTags, userId: metaUserId } = JSON.parse(req.body.metadata) as {
         segments: SegmentItem[];
         tagId?: number | string;
+        tags?: string[] | string;
         userId?: number | string;
       };
 
@@ -1221,6 +1222,16 @@ app.post(
             throw new Error(`Temp video binary missing for file: ${seg.tempVideoName}`);
           }
 
+          let tagConnectOrCreate: { where: { title: string }; create: { title: string } }[] = [];
+          if (Array.isArray(metaTags)) {
+            tagConnectOrCreate = metaTags
+              .map((t) => String(t).trim())
+              .filter(Boolean)
+              .map((t) => ({ where: { title: t }, create: { title: t } }));
+          } else if (typeof metaTags === "string" && metaTags.trim()) {
+            tagConnectOrCreate = [{ where: { title: metaTags.trim() }, create: { title: metaTags.trim() } }];
+          }
+
           const newVideo = await tx.newVideo.create({
             data: {
               title: seg.title,
@@ -1229,7 +1240,9 @@ app.post(
               seriesNr: seg.seriesNr ?? null,
               seriesTotal: seg.seriesTotal ?? null,
               userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
-              tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
+              tags: tagConnectOrCreate.length > 0
+                ? { connectOrCreate: tagConnectOrCreate }
+                : (tagId ? { connect: [{ id: Number(tagId) }] } : undefined),
             },
             include: { tags: true },
           });

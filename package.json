@@ -16,7 +16,8 @@
     "start:dev": "live-server ./ --port=8080 --open=/index.html --wait=200",
     "npx": "tailwindcss init",
     "generate-tags": "tsx src/generate-tag-pages.ts",
-    "recognize": "tsx scripts/recognize.ts"
+    "recognize": "tsx scripts/recognize.ts",
+    "crawl": "tsx scripts/crawler/cli.ts"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.7",

@@ -441,27 +441,36 @@ class State {
         const currentId = baseId ?? this.positions[section] ?? this.positions[1] ?? 0;
 
         // New mode (iterate stored newVideos array in sequence)
-        if (this.state === "new" && this.newVideos != null && this.newVideos.length > 0) {
-            const videoIds = this.newVideos.map((v) => v.id);
-            const currentIndex = videoIds.indexOf(currentId);
-            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
-            return videoIds[nextIndex];
+        if (this.state === "new") {
+            if (this.newVideos != null && this.newVideos.length > 0) {
+                const videoIds = this.newVideos.map((v) => v.id);
+                const currentIndex = videoIds.indexOf(currentId);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+                return videoIds[nextIndex];
+            }
+            return 0;
         }
 
         // Liked mode (iterate stored array)
-        if ((this.state === "liked" || this.state === "favorite") && this.likedVideos != null && this.likedVideos.length > 0) {
-            const videoIds = this.likedVideos.map((v) => v.id);
-            const currentIndex = videoIds.indexOf(currentId);
-            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
-            return videoIds[nextIndex];
+        if (this.state === "liked" || this.state === "favorite") {
+            if (this.likedVideos != null && this.likedVideos.length > 0) {
+                const videoIds = this.likedVideos.map((v) => v.id);
+                const currentIndex = videoIds.indexOf(currentId);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+                return videoIds[nextIndex];
+            }
+            return 0;
         }
 
         // Trending mode (iterate stored array)
-        if (this.state === "trending" && this.trendingVideos != null && this.trendingVideos.length > 0) {
-            const videoIds = this.trendingVideos.map((v) => v.id);
-            const currentIndex = videoIds.indexOf(currentId);
-            const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
-            return videoIds[nextIndex];
+        if (this.state === "trending") {
+            if (this.trendingVideos != null && this.trendingVideos.length > 0) {
+                const videoIds = this.trendingVideos.map((v) => v.id);
+                const currentIndex = videoIds.indexOf(currentId);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+                return videoIds[nextIndex];
+            }
+            return 0;
         }
 
         // Tagged / DB videos for this specific section
@@ -757,9 +766,11 @@ class State {
                 this.newVideos = await this.api.fetchNewVideos();
             }
             this.randomized = false;
-            this.positions = { 1: this.newVideos[0]?.id || 0, 2: 0, 3: 0, 4: 0 };
+            this.positions = { 1: this.newVideos?.[0]?.id || 0, 2: 0, 3: 0, 4: 0 };
         } catch (error) {
             console.error("Failed to fetch new videos:", error);
+            this.newVideos = [];
+            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
         }
     }
 
