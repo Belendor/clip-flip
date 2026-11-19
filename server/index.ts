@@ -3022,9 +3022,11 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
     console.error("Error looking up video metadata for player:", err);
   }
 
-  const host = req.get('host') || 'clip-flip.com';
-  const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  const fullBase = `${proto}://${host}`;
+  const rawHost = req.get('x-forwarded-host') || req.get('host') || 'clip-flip.com';
+  const isLocal = rawHost.includes('localhost') || rawHost.includes('127.0.0.1');
+  const canonicalHost = isLocal ? rawHost : 'clip-flip.com';
+  const proto = isLocal ? 'http' : 'https';
+  const fullBase = `${proto}://${canonicalHost}`;
   const rawVideoUrl = `${cleanPath}?raw=1`;
   const absoluteRawUrl = `${fullBase}${rawVideoUrl}`;
   const absolutePageUrl = `${fullBase}${cleanPath}`;
