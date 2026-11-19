@@ -3052,32 +3052,102 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       width: 100%; height: 100%;
-      background: #000;
+      background: #000; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden;
       display: flex; align-items: center; justify-content: center;
+    }
+    .player-wrap {
+      position: relative; width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: #000;
     }
     video {
       width: 100%; height: 100%;
       max-width: 100vw; max-height: 100vh;
       object-fit: contain;
-      cursor: pointer;
+    }
+    .controls-overlay {
+      position: absolute; top: 12px; left: 14px; right: 14px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: none; z-index: 10;
+    }
+    .btn-pill {
+      pointer-events: auto;
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff; padding: 6px 14px; border-radius: 9999px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      backdrop-filter: blur(8px);
+      display: inline-flex; align-items: center; gap: 6px;
+      user-select: none; transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-pill:hover { background: rgba(255, 255, 255, 0.2); }
+    .btn-pill.active {
+      border-color: #38bdf8; color: #38bdf8; background: rgba(14, 165, 233, 0.15);
     }
   </style>
 </head>
 <body>
-  <video id="v" src="${rawVideoUrl}" autoplay loop muted playsinline controls></video>
+  <div class="player-wrap">
+    <div class="controls-overlay">
+      <button id="repeatBtn" class="btn-pill active" title="Toggle video repeat">🔁 Repeat: ON</button>
+      <button id="soundBtn" class="btn-pill" title="Toggle audio">🔇 Tap to Unmute</button>
+    </div>
+
+    <video id="v" src="${rawVideoUrl}" autoplay loop muted playsinline controls></video>
+  </div>
 
   <script>
     const v = document.getElementById('v');
+    const repeatBtn = document.getElementById('repeatBtn');
+    const soundBtn = document.getElementById('soundBtn');
+
+    // Force loop enabled
     v.loop = true;
+
+    // Bulletproof loop listener for mobile browsers where native loop can stall
     v.addEventListener('ended', function() {
-      v.currentTime = 0;
-      v.play();
+      if (v.loop) {
+        v.currentTime = 0;
+        v.play();
+      }
     });
+
+    // Autoplay attempt
     v.play().catch(function() {});
-    v.addEventListener('click', function() {
-      v.muted = !v.muted;
+
+    // Repeat toggle button
+    repeatBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      v.loop = !v.loop;
+      if (v.loop) {
+        repeatBtn.classList.add('active');
+        repeatBtn.textContent = '🔁 Repeat: ON';
+      } else {
+        repeatBtn.classList.remove('active');
+        repeatBtn.textContent = '➡️ Repeat: OFF';
+      }
     });
+
+    // Sound toggle button
+    soundBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      v.muted = !v.muted;
+      updateSoundUI();
+    });
+
+    function updateSoundUI() {
+      if (v.muted || v.volume === 0) {
+        soundBtn.textContent = '🔇 Tap to Unmute';
+        soundBtn.classList.remove('active');
+      } else {
+        soundBtn.textContent = '🔊 Sound: ON';
+        soundBtn.classList.add('active');
+      }
+    }
+
+    v.addEventListener('volumechange', updateSoundUI);
   </script>
 </body>
 </html>`;
