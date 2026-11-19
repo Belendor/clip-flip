@@ -1225,11 +1225,33 @@ async function checkTitleExists(
 
   if (conditions.length === 0) return { exists: false };
 
-  // 1. Check NewVideo (clips waiting for review)
+  // Check if any matching video exists in New or Video
   const existingInNew = await prisma.newVideo.findFirst({
     where: { OR: conditions },
-    select: { id: true, title: true },
+    select: { id: true, title: true, seriesNr: true, seriesTotal: true },
   });
+
+  const existingInVideo = await prisma.video.findFirst({
+    where: { OR: conditions },
+    select: { id: true, title: true, seriesNr: true, seriesTotal: true },
+  });
+
+  const foundItem = existingInNew || existingInVideo;
+  if (!foundItem) return { exists: false };
+
+  // If the found video was part of a multi-segment series, check whether all segments were actually uploaded
+  const expectedTotal = foundItem.seriesTotal;
+  if (expectedTotal && expectedTotal > 1) {
+    const [countInNew, countInVideo] = await Promise.all([
+      prisma.newVideo.count({ where: { OR: conditions } }),
+      prisma.video.count({ where: { OR: conditions } }),
+    ]);
+    const totalFound = countInNew + countInVideo;
+    if (totalFound < expectedTotal) {
+      // Incomplete upload! Not all segments exist yet, allow upload so remaining segments can be completed
+      return { exists: false };
+    }
+  }
 
   if (existingInNew) {
     return {
@@ -1239,12 +1261,6 @@ async function checkTitleExists(
       id: existingInNew.id,
     };
   }
-
-  // 2. Check Video (approved main library)
-  const existingInVideo = await prisma.video.findFirst({
-    where: { OR: conditions },
-    select: { id: true, title: true },
-  });
 
   if (existingInVideo) {
     return {
@@ -1784,17 +1800,42 @@ app.post(
           const modelCandidate = seg.model || (titleParts.length > 1 ? titleParts[0].trim() : undefined);
           const rawVideoId = titleParts.length > 1 ? titleParts[1].trim() : undefined;
 
-          // Duplicate defence: check if title or raw video ID already exists in DB
-          const dupConditions: any[] = [{ title: seg.title }];
-          if (rawVideoId && rawVideoId.length > 3) {
-            dupConditions.push({ title: { contains: rawVideoId } });
+          // Duplicate defence: check if this specific segment or video already exists in DB
+          const dupConditions: any[] = [];
+          if (seg.seriesNr != null) {
+            dupConditions.push({
+              title: seg.title,
+              seriesNr: seg.seriesNr,
+            });
+            if (rawVideoId && rawVideoId.length > 3) {
+              dupConditions.push({
+                title: { contains: rawVideoId },
+                seriesNr: seg.seriesNr,
+              });
+            }
+          } else if (seg.startTime != null && seg.startTime > 0) {
+            dupConditions.push({
+              title: seg.title,
+              startTime: seg.startTime,
+            });
+            if (rawVideoId && rawVideoId.length > 3) {
+              dupConditions.push({
+                title: { contains: rawVideoId },
+                startTime: seg.startTime,
+              });
+            }
+          } else {
+            dupConditions.push({ title: seg.title });
+            if (rawVideoId && rawVideoId.length > 3) {
+              dupConditions.push({ title: { contains: rawVideoId } });
+            }
           }
 
           const dupInNew = await tx.newVideo.findFirst({ where: { OR: dupConditions } });
           const dupInVideo = await tx.video.findFirst({ where: { OR: dupConditions } });
 
           if (dupInNew || dupInVideo) {
-            console.log(`[confirm-segments] 🛡️ Duplicate skipped for "${seg.title}" (already exists in ${dupInNew ? 'New' : 'Video'})`);
+            console.log(`[confirm-segments] 🛡️ Duplicate skipped for "${seg.title}" segment #${seg.seriesNr ?? 1} (already exists in ${dupInNew ? 'New' : 'Video'})`);
             continue;
           }
 
