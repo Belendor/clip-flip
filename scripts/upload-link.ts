@@ -178,7 +178,19 @@ async function main() {
 
     for (let i = 0; i < urls.length; i++) {
         const rawUrl = urls[i];
-        console.log(`[${i + 1}/${urls.length}] Fetching: ${rawUrl}`);
+        console.log(`[${i + 1}/${urls.length}] Inspecting: ${rawUrl}`);
+
+        // Duplicate pre-check against target server before downloading
+        try {
+            const checkEndpoint = `${targetUrl.replace(/\/+$/, "")}/check-duplicate?url=${encodeURIComponent(rawUrl)}`;
+            const checkRes = await axios.get(checkEndpoint, { timeout: 8000 });
+            if (checkRes.data?.exists) {
+                const loc = checkRes.data.inLocation === "new" ? "New tab (pending review)" : "Approved Video library";
+                console.log(`  🛡️  DUPLICATE DETECTED: "${checkRes.data.title}" already exists in ${loc}!`);
+                console.log(`  ⏩ Skipping download and processing.\n`);
+                continue;
+            }
+        } catch (_) {}
 
         const tempDownloadPath = path.join(tempDir, `temp_url_${Date.now()}_${i}.mp4`);
         tempDownloads.push(tempDownloadPath);

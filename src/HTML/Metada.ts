@@ -236,12 +236,29 @@ export default class Metadata {
         const urlInfoBadge = document.createElement("div");
         urlInfoBadge.className = "text-[11px] text-sky-300 font-mono mb-2 hidden bg-sky-950/40 p-1.5 rounded border border-sky-500/30";
 
+        const uploadTitleInput = document.createElement("input");
+        uploadTitleInput.type = "text";
+        uploadTitleInput.placeholder = "Clip title (optional)";
+        uploadTitleInput.className = "upload-text-input block w-full mb-2";
+
+        const submitUploadBtn = document.createElement("button");
+        submitUploadBtn.type = "button";
+        submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
+        submitUploadBtn.className = "upload-submit-btn";
+
+        let isDuplicateUrl = false;
+
         let redgifsDebounce: any = null;
         uploadUrlInput.addEventListener("input", () => {
             const rawVal = uploadUrlInput.value.trim();
             if (!rawVal || !rawVal.includes("redgifs.com")) {
                 urlInfoBadge.classList.add("hidden");
                 urlInfoBadge.innerHTML = "";
+                if (isDuplicateUrl) {
+                    isDuplicateUrl = false;
+                    submitUploadBtn.disabled = false;
+                    submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
+                }
                 return;
             }
 
@@ -251,19 +268,34 @@ export default class Metadata {
                 if (!firstUrl) return;
 
                 urlInfoBadge.classList.remove("hidden");
-                urlInfoBadge.innerHTML = `<span class="animate-pulse">🔍 Inspecting RedGIFs link...</span>`;
+                urlInfoBadge.className = "text-[11px] text-sky-300 font-mono mb-2 bg-sky-950/40 p-1.5 rounded border border-sky-500/30";
+                urlInfoBadge.innerHTML = `<span class="animate-pulse">🔍 Inspecting RedGIFs link & checking duplicates...</span>`;
 
                 try {
                     const res = await fetch(`${config.apiUrl}/redgifs-info?url=${encodeURIComponent(firstUrl)}`);
                     if (res.ok) {
                         const info = await res.json();
-                        if (info.uploader || info.title) {
-                            urlInfoBadge.innerHTML = `👤 Uploader: <strong class="text-white">${info.uploader || "Unknown"}</strong> &nbsp;|&nbsp; ID: <strong class="text-white">${info.videoId || ""}</strong>`;
-                            if (!uploadTitleInput.value.trim() && info.title) {
-                                uploadTitleInput.value = info.title;
-                            }
+                        if (info.title && !uploadTitleInput.value.trim()) {
+                            uploadTitleInput.value = info.title;
+                        }
+
+                        if (info.duplicate?.exists) {
+                            isDuplicateUrl = true;
+                            const locName = info.duplicate.inLocation === "NewVideo" ? "New (Pending Review)" : "Approved Library";
+                            urlInfoBadge.className = "text-[11px] text-rose-300 font-mono mb-2 bg-rose-950/60 p-2 rounded border border-rose-500/50";
+                            urlInfoBadge.innerHTML = `⚠️ <strong class="text-rose-200">Duplicate Detected:</strong> Already exists in <strong>${locName}</strong>!<br><span class="text-xs text-rose-300">Title: "${info.duplicate.title || info.title || "Untitled"}"</span>`;
+                            submitUploadBtn.disabled = true;
+                            submitUploadBtn.textContent = "⚠️ Already Uploaded (Duplicate)";
                         } else {
-                            urlInfoBadge.classList.add("hidden");
+                            isDuplicateUrl = false;
+                            submitUploadBtn.disabled = false;
+                            submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
+                            if (info.uploader || info.title) {
+                                urlInfoBadge.className = "text-[11px] text-sky-300 font-mono mb-2 bg-sky-950/40 p-1.5 rounded border border-sky-500/30";
+                                urlInfoBadge.innerHTML = `👤 Uploader: <strong class="text-white">${info.uploader || "Unknown"}</strong> &nbsp;|&nbsp; ID: <strong class="text-white">${info.videoId || ""}</strong>`;
+                            } else {
+                                urlInfoBadge.classList.add("hidden");
+                            }
                         }
                     } else {
                         urlInfoBadge.classList.add("hidden");
@@ -303,7 +335,13 @@ export default class Metadata {
             uploadUrlInput.classList.remove("hidden");
             fileInput.classList.add("hidden");
             filePreviewBox.classList.add("hidden");
-            submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
+            if (isDuplicateUrl) {
+                submitUploadBtn.disabled = true;
+                submitUploadBtn.textContent = "⚠️ Already Uploaded (Duplicate)";
+            } else {
+                submitUploadBtn.disabled = false;
+                submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
+            }
             updateNotice();
         });
 
@@ -314,6 +352,7 @@ export default class Metadata {
             uploadUrlInput.classList.add("hidden");
             fileInput.classList.remove("hidden");
             if (fileInput.files?.length) filePreviewBox.classList.remove("hidden");
+            submitUploadBtn.disabled = false;
             submitUploadBtn.textContent = "Upload";
             updateNotice();
         });
@@ -391,11 +430,6 @@ export default class Metadata {
             }
         });
 
-        const uploadTitleInput = document.createElement("input");
-        uploadTitleInput.type = "text";
-        uploadTitleInput.placeholder = "Clip title (optional)";
-        uploadTitleInput.className = "upload-text-input block w-full mb-2";
-
         const uploadTagSelect = document.createElement("select");
         uploadTagSelect.className = "upload-tag-select block w-full mb-2";
         if (section === 1) { this.uploadTagSelect = uploadTagSelect; }
@@ -408,10 +442,6 @@ export default class Metadata {
             qualityNotice.innerHTML = `⚠️ <strong>Quality rules:</strong> Clips must be <strong>2s–5s</strong> and max <strong>5 MB</strong>.`;
         }
 
-        const submitUploadBtn = document.createElement("button");
-        submitUploadBtn.type = "button";
-        submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
-        submitUploadBtn.className = "upload-submit-btn";
         submitUploadBtn.addEventListener("click", async () => {
             if (!uploadTagSelect.value) {
                 alert("Please select a tag for your video clip.");

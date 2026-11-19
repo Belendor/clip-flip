@@ -1197,7 +1197,57 @@ async function fetchRedGifsDetails(url: string): Promise<{ uploader?: string; vi
   }
 }
 
-// Endpoint to inspect RedGIFs metadata (returns uploader, title, tags)
+// Duplicate defence: check if a video with the same title or video ID already exists in DB
+async function checkTitleExists(
+  titleToCheck?: string,
+  videoIdToCheck?: string
+): Promise<{ exists: boolean; inLocation?: "new" | "approved"; title?: string; id?: number }> {
+  if (!titleToCheck && !videoIdToCheck) return { exists: false };
+
+  const conditions: any[] = [];
+  if (titleToCheck && titleToCheck.trim()) {
+    conditions.push({ title: titleToCheck.trim() });
+  }
+  if (videoIdToCheck && videoIdToCheck.trim() && videoIdToCheck.trim().length > 3) {
+    conditions.push({ title: { contains: videoIdToCheck.trim() } });
+  }
+
+  if (conditions.length === 0) return { exists: false };
+
+  // 1. Check NewVideo (clips waiting for review)
+  const existingInNew = await prisma.newVideo.findFirst({
+    where: { OR: conditions },
+    select: { id: true, title: true },
+  });
+
+  if (existingInNew) {
+    return {
+      exists: true,
+      inLocation: "new",
+      title: existingInNew.title || titleToCheck,
+      id: existingInNew.id,
+    };
+  }
+
+  // 2. Check Video (approved main library)
+  const existingInVideo = await prisma.video.findFirst({
+    where: { OR: conditions },
+    select: { id: true, title: true },
+  });
+
+  if (existingInVideo) {
+    return {
+      exists: true,
+      inLocation: "approved",
+      title: existingInVideo.title || titleToCheck,
+      id: existingInVideo.id,
+    };
+  }
+
+  return { exists: false };
+}
+
+// Endpoint to inspect RedGIFs metadata (returns uploader, title, tags, and duplicate status)
 app.get("/redgifs-info", async (req: Request, res: Response) => {
   const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
   if (!rawUrl) {
@@ -1205,10 +1255,35 @@ app.get("/redgifs-info", async (req: Request, res: Response) => {
   }
   try {
     const details = await fetchRedGifsDetails(rawUrl);
-    return res.json(details);
+    const duplicate = await checkTitleExists(details.title, details.videoId);
+    return res.json({
+      ...details,
+      duplicate,
+    });
   } catch (error) {
     return res.status(500).json({ error: "Failed to retrieve RedGIFs info" });
   }
+});
+
+// Endpoint to check if a title/video ID already exists (duplicate defence)
+app.get("/check-duplicate", async (req: Request, res: Response) => {
+  const title = typeof req.query.title === "string" ? req.query.title.trim() : undefined;
+  const videoId = typeof req.query.videoId === "string" ? req.query.videoId.trim() : undefined;
+  const url = typeof req.query.url === "string" ? req.query.url.trim() : undefined;
+
+  let effectiveTitle = title;
+  let effectiveVideoId = videoId;
+
+  if (url) {
+    try {
+      const details = await fetchRedGifsDetails(url);
+      if (!effectiveTitle) effectiveTitle = details.title;
+      if (!effectiveVideoId) effectiveVideoId = details.videoId;
+    } catch (_) {}
+  }
+
+  const result = await checkTitleExists(effectiveTitle, effectiveVideoId);
+  return res.json(result);
 });
 
 // Helper for downloading video from remote URL
@@ -1291,6 +1366,7 @@ app.post("/upload-url", async (req: Request, res: Response) => {
   const segmentLength = 4;
   const processedSegments: SegmentItem[] = [];
   const tempFilesToClean: string[] = [];
+  const skippedDuplicates: Array<{ title: string; videoId?: string; location?: string; reason: string }> = [];
 
   const cleanupAll = () => {
     for (const f of tempFilesToClean) {
@@ -1303,6 +1379,28 @@ app.post("/upload-url", async (req: Request, res: Response) => {
   try {
     for (let uIdx = 0; uIdx < cleanUrls.length; uIdx++) {
       const sourceUrl = cleanUrls[uIdx];
+
+      // Pre-check duplicate before download to save bandwidth and CPU
+      let preInfo: any = null;
+      try {
+        preInfo = await fetchRedGifsDetails(sourceUrl);
+      } catch (_) {}
+
+      const candidateTitle = title && String(title).trim() ? String(title).trim() : preInfo?.title;
+      if (candidateTitle || preInfo?.videoId) {
+        const dupCheck = await checkTitleExists(candidateTitle, preInfo?.videoId);
+        if (dupCheck.exists) {
+          console.log(`[upload-url] 🛡️ Duplicate blocked before download: "${dupCheck.title}" already exists in ${dupCheck.inLocation}! Skipping.`);
+          skippedDuplicates.push({
+            title: dupCheck.title || candidateTitle,
+            videoId: preInfo?.videoId,
+            location: dupCheck.inLocation,
+            reason: `Already exists in ${dupCheck.inLocation === 'new' ? 'New tab (pending review)' : 'Video library'}`,
+          });
+          continue;
+        }
+      }
+
       const rawTempKey = crypto.randomUUID();
       const rawTempPath = path.join(tempBaseDir, `raw_${rawTempKey}.mp4`);
       tempFilesToClean.push(rawTempPath);
@@ -1320,6 +1418,20 @@ app.post("/upload-url", async (req: Request, res: Response) => {
         title && String(title).trim()
           ? String(title).trim()
           : (autoTitle || fallbackTitle);
+
+      // Post-download duplicate double-check with resolved title and ID
+      const postDupCheck = await checkTitleExists(baseTitle, videoId);
+      if (postDupCheck.exists) {
+        console.log(`[upload-url] 🛡️ Duplicate blocked post-download: "${baseTitle}" already exists in ${postDupCheck.inLocation}! Skipping.`);
+        skippedDuplicates.push({
+          title: baseTitle,
+          videoId,
+          location: postDupCheck.inLocation,
+          reason: `Already exists in ${postDupCheck.inLocation === 'new' ? 'New tab (pending review)' : 'Video library'}`,
+        });
+        try { if (fsSync.existsSync(rawTempPath)) fsSync.unlinkSync(rawTempPath); } catch (_) {}
+        continue;
+      }
 
       // Case 1: Already a short clip (2s to 5.05s)
       if (duration <= 5.05 && duration >= 1.95) {
@@ -1439,6 +1551,12 @@ app.post("/upload-url", async (req: Request, res: Response) => {
 
     if (processedSegments.length === 0) {
       cleanupAll();
+      if (skippedDuplicates.length > 0) {
+        return res.status(409).json({
+          error: `Upload skipped: Video "${skippedDuplicates[0].title}" already exists in ${skippedDuplicates[0].reason}.`,
+          skippedDuplicates,
+        });
+      }
       return res.status(400).json({ error: "No valid video segments could be extracted." });
     }
 
@@ -1653,6 +1771,21 @@ app.post(
 
           const titleParts = seg.title ? seg.title.split(",") : [];
           const modelCandidate = seg.model || (titleParts.length > 1 ? titleParts[0].trim() : undefined);
+          const rawVideoId = titleParts.length > 1 ? titleParts[1].trim() : undefined;
+
+          // Duplicate defence: check if title or raw video ID already exists in DB
+          const dupConditions: any[] = [{ title: seg.title }];
+          if (rawVideoId && rawVideoId.length > 3) {
+            dupConditions.push({ title: { contains: rawVideoId } });
+          }
+
+          const dupInNew = await tx.newVideo.findFirst({ where: { OR: dupConditions } });
+          const dupInVideo = await tx.video.findFirst({ where: { OR: dupConditions } });
+
+          if (dupInNew || dupInVideo) {
+            console.log(`[confirm-segments] 🛡️ Duplicate skipped for "${seg.title}" (already exists in ${dupInNew ? 'New' : 'Video'})`);
+            continue;
+          }
 
           const newVideo = await tx.newVideo.create({
             data: {
