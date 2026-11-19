@@ -3013,8 +3013,8 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
         title = `Clip #${vidId}`;
       }
     } else {
-      rawVideoUrl = `${cleanPath}?raw=1`;
-      title = path.basename(cleanPath, '.mp4');
+      rawVideoUrl = `${cleanPath.replace(/\.gifv$/i, '.mp4')}?raw=1`;
+      title = path.basename(cleanPath).replace(/\.(mp4|gifv)$/i, '');
     }
   } catch (err) {
     console.error("Error looking up video:", err);
