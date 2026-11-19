@@ -2963,6 +2963,224 @@ app.post("/videos/:id/reaction", async (req: Request, res: Response) => {
   });
 });
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+const handleVideoPlayer = async (req: Request, res: Response) => {
+  const originalUri = (req.headers['x-original-uri'] as string) || (req.query.src as string) || (req.query.url as string) || req.path;
+  const cleanPath = (originalUri || '').split('?')[0];
+
+  let title = "ClipFlip Video";
+  let description = "Watch, autoplay, and loop clips on ClipFlip";
+  let tagsStr = "";
+
+  const newMatch = cleanPath.match(/\/new\/(\d+)\.mp4/i);
+  const stdMatch = cleanPath.match(/\/(video|video1)\/(\d+)\.mp4/i);
+
+  try {
+    if (newMatch) {
+      const vidId = parseInt(newMatch[1], 10);
+      const newVid = await prisma.newVideo.findUnique({
+        where: { id: vidId },
+        include: { tags: true, models: true },
+      });
+      if (newVid) {
+        title = newVid.title || `Clip #${newVid.id}`;
+        const modelNames = newVid.models?.map((m) => m.name).filter(Boolean);
+        if (modelNames && modelNames.length > 0) {
+          title = `${modelNames.join(', ')} - ${title}`;
+        }
+        tagsStr = newVid.tags?.map((t) => `#${t.title}`).join(' ') || "";
+      }
+    } else if (stdMatch) {
+      const vidId = parseInt(stdMatch[2], 10);
+      const vid = await prisma.video.findUnique({
+        where: { id: vidId },
+        include: { tags: true, models: true },
+      });
+      if (vid) {
+        title = vid.title || `Clip #${vid.id}`;
+        const modelNames = vid.models?.map((m) => m.name).filter(Boolean);
+        if (modelNames && modelNames.length > 0) {
+          title = `${modelNames.join(', ')} - ${title}`;
+        }
+        tagsStr = vid.tags?.map((t) => `#${t.title}`).join(' ') || "";
+      }
+    } else {
+      const filename = path.basename(cleanPath, '.mp4');
+      if (filename && filename !== 'player') {
+        title = `Clip ${filename}`;
+      }
+    }
+  } catch (err) {
+    console.error("Error looking up video metadata for player:", err);
+  }
+
+  const host = req.get('host') || 'clip-flip.com';
+  const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const fullBase = `${proto}://${host}`;
+  const rawVideoUrl = `${cleanPath}?raw=1`;
+  const absoluteRawUrl = `${fullBase}${rawVideoUrl}`;
+  const absolutePageUrl = `${fullBase}${cleanPath}`;
+  const safeTitle = escapeHtml(title);
+  const safeDesc = escapeHtml(tagsStr ? `${title} (${tagsStr})` : description);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>${safeTitle} - ClipFlip</title>
+
+  <!-- Open Graph / Reddit / Discord / Facebook -->
+  <meta property="og:site_name" content="ClipFlip">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeDesc}">
+  <meta property="og:type" content="video.other">
+  <meta property="og:video" content="${absoluteRawUrl}">
+  <meta property="og:video:secure_url" content="${absoluteRawUrl}">
+  <meta property="og:video:type" content="video/mp4">
+  <meta property="og:video:width" content="720">
+  <meta property="og:video:height" content="1280">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="player">
+  <meta name="twitter:title" content="${safeTitle}">
+  <meta name="twitter:description" content="${safeDesc}">
+  <meta name="twitter:player" content="${absolutePageUrl}">
+  <meta name="twitter:player:width" content="720">
+  <meta name="twitter:player:height" content="1280">
+  <meta name="twitter:player:stream" content="${absoluteRawUrl}">
+  <meta name="twitter:player:stream:content_type" content="video/mp4">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+    .player-wrap {
+      position: relative; width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: #000;
+    }
+    video {
+      width: 100%; height: 100%;
+      max-width: 100vw; max-height: 100vh;
+      object-fit: contain;
+      cursor: pointer;
+    }
+    .overlay-header {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 14px 18px;
+      display: flex; justify-content: space-between; align-items: center;
+      background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+      z-index: 20; pointer-events: none;
+    }
+    .badge-loop {
+      pointer-events: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      padding: 6px 14px; border-radius: 9999px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      backdrop-filter: blur(8px);
+    }
+    .badge-loop svg { width: 14px; height: 14px; fill: currentColor; }
+    .brand-link {
+      pointer-events: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #e11d48; color: #fff; text-decoration: none;
+      padding: 7px 16px; border-radius: 9999px;
+      font-size: 12px; font-weight: 700;
+      box-shadow: 0 2px 12px rgba(225, 29, 72, 0.4);
+      transition: transform 0.15s, background 0.15s;
+    }
+    .brand-link:hover { background: #be123c; transform: scale(1.04); }
+    .unmute-banner {
+      position: absolute; bottom: 68px; left: 50%; transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff; padding: 10px 22px; border-radius: 9999px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      z-index: 20; display: flex; align-items: center; gap: 8px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      transition: opacity 0.25s, transform 0.25s;
+    }
+    .unmute-banner:hover { background: rgba(255, 255, 255, 0.15); }
+    .unmute-banner.hidden { opacity: 0; pointer-events: none; transform: translateX(-50%) scale(0.9); }
+  </style>
+</head>
+<body>
+  <div class="player-wrap">
+    <div class="overlay-header">
+      <div class="badge-loop">
+        <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+        AUTOPLAY &amp; REPEAT ON
+      </div>
+      <a href="${fullBase}" class="brand-link">More on ClipFlip &rarr;</a>
+    </div>
+
+    <video id="vid" src="${rawVideoUrl}" autoplay loop muted playsinline controls></video>
+
+    <button id="unmuteBtn" class="unmute-banner">🔊 Tap to Unmute</button>
+  </div>
+
+  <script>
+    const v = document.getElementById('vid');
+    const unmute = document.getElementById('unmuteBtn');
+
+    // Force loop attribute on the video element
+    v.loop = true;
+
+    // Bulletproof loop listener for mobile browsers where native loop can stall
+    v.addEventListener('ended', function() {
+      v.currentTime = 0;
+      v.play();
+    });
+
+    // Autoplay attempt
+    v.play().catch(function() {});
+
+    function doUnmute() {
+      v.muted = false;
+      unmute.classList.add('hidden');
+    }
+
+    unmute.addEventListener('click', doUnmute);
+    v.addEventListener('click', function() {
+      if (v.muted) {
+        doUnmute();
+      }
+    });
+
+    v.addEventListener('volumechange', function() {
+      if (!v.muted && v.volume > 0) {
+        unmute.classList.add('hidden');
+      }
+    });
+  </script>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(html);
+};
+
+app.get('/player', handleVideoPlayer);
+app.get('/video/*', handleVideoPlayer);
+app.get('/video1/*', handleVideoPlayer);
+
 app.listen(port, '0.0.0.0', () => {
   console.log(`Server is running at http://0.0.0.0:${port}`);
 });
