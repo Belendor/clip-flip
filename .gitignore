@@ -37,3 +37,8 @@ prisma/*.db-journal
 # Local image recognition test folder
 recognize/
 recognise/
+
+# Temporary upload and storage directories
+storage/
+tmp_uploads/
+uploads/

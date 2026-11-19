@@ -215,14 +215,67 @@ export default class Metadata {
         closeUploadBtn.innerHTML = "&times;";
         closeUploadBtn.addEventListener("click", () => { this.setUploadFormVisibility(false); });
 
+        let uploadMode: "url" | "file" = "url";
+
+        const modeSelector = document.createElement("div");
+        modeSelector.className = "flex items-center gap-1 mb-3 bg-black/40 p-1 rounded border border-white/10";
+        modeSelector.innerHTML = `
+            <button type="button" id="tab-mode-url" class="upload-mode-tab flex-1 py-1 text-xs font-semibold rounded transition-all bg-sky-500/20 text-sky-400 border border-sky-500/40" data-mode="url">
+                🔗 RedGIFs Link
+            </button>
+            <button type="button" id="tab-mode-file" class="upload-mode-tab flex-1 py-1 text-xs font-semibold rounded transition-all text-gray-400 hover:text-white" data-mode="file">
+                📁 File Upload
+            </button>
+        `;
+
+        const uploadUrlInput = document.createElement("textarea");
+        uploadUrlInput.placeholder = "Paste RedGIFs .m4s, .mp4, or watch link (e.g. https://media.redgifs.com/...m4s)";
+        uploadUrlInput.rows = 2;
+        uploadUrlInput.className = "upload-text-input block w-full mb-2 font-mono text-xs";
+
         const fileInput = document.createElement("input");
         fileInput.type = "file";
         fileInput.accept = "video/mp4,video/webm,video/*";
         fileInput.multiple = true;
-        fileInput.className = "upload-file-input block w-full mb-2";
+        fileInput.className = "upload-file-input hidden block w-full mb-2";
 
         const filePreviewBox = document.createElement("div");
         filePreviewBox.className = "upload-preview-box hidden";
+
+        const updateNotice = () => {
+            if (uploadMode === "url") {
+                qualityNotice.innerHTML = `⚡ <strong>Link Import:</strong> Video is downloaded, sliced into 4s clips with FFmpeg, uploaded to production, and <strong>immediately deleted from your PC</strong>.`;
+            } else if (config.isLocal) {
+                qualityNotice.innerHTML = `💻 <strong>Local Processing:</strong> Videos of any length will be automatically sliced into 4s clips (or kept if 2s–5s) and uploaded directly to production.`;
+            } else {
+                qualityNotice.innerHTML = `⚠️ <strong>Quality rules:</strong> Clips must be <strong>2s–5s</strong> and max <strong>5 MB</strong>.`;
+            }
+        };
+
+        const btnTabUrl = modeSelector.querySelector("#tab-mode-url") as HTMLButtonElement;
+        const btnTabFile = modeSelector.querySelector("#tab-mode-file") as HTMLButtonElement;
+
+        btnTabUrl?.addEventListener("click", () => {
+            uploadMode = "url";
+            btnTabUrl.className = "upload-mode-tab flex-1 py-1 text-xs font-semibold rounded transition-all bg-sky-500/20 text-sky-400 border border-sky-500/40";
+            btnTabFile.className = "upload-mode-tab flex-1 py-1 text-xs font-semibold rounded transition-all text-gray-400 hover:text-white";
+            uploadUrlInput.classList.remove("hidden");
+            fileInput.classList.add("hidden");
+            filePreviewBox.classList.add("hidden");
+            submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
+            updateNotice();
+        });
+
+        btnTabFile?.addEventListener("click", () => {
+            uploadMode = "file";
+            btnTabFile.className = "upload-mode-tab flex-1 py-1 text-xs font-semibold rounded transition-all bg-sky-500/20 text-sky-400 border border-sky-500/40";
+            btnTabUrl.className = "upload-mode-tab flex-1 py-1 text-xs font-semibold rounded transition-all text-gray-400 hover:text-white";
+            uploadUrlInput.classList.add("hidden");
+            fileInput.classList.remove("hidden");
+            if (fileInput.files?.length) filePreviewBox.classList.remove("hidden");
+            submitUploadBtn.textContent = "Upload";
+            updateNotice();
+        });
 
         const checkClipDuration = (file: File): Promise<number> => {
             return new Promise((resolve) => {
@@ -316,16 +369,47 @@ export default class Metadata {
 
         const submitUploadBtn = document.createElement("button");
         submitUploadBtn.type = "button";
-        submitUploadBtn.textContent = "Upload";
+        submitUploadBtn.textContent = "Download, Slice & Upload to Prod";
         submitUploadBtn.className = "upload-submit-btn";
         submitUploadBtn.addEventListener("click", async () => {
-            if (!fileInput.files?.length) {
-                alert("Please select at least one video file to upload.");
+            if (!uploadTagSelect.value) {
+                alert("Please select a tag for your video clip.");
                 return;
             }
 
-            if (!uploadTagSelect.value) {
-                alert("Please select a tag for your video clip.");
+            if (uploadMode === "url") {
+                const urlVal = uploadUrlInput.value.trim();
+                if (!urlVal) {
+                    alert("Please paste at least one video link (e.g. https://media.redgifs.com/...m4s).");
+                    return;
+                }
+
+                submitUploadBtn.disabled = true;
+                const originalText = submitUploadBtn.textContent;
+                submitUploadBtn.textContent = "Downloading & Slicing with FFmpeg...";
+
+                try {
+                    const res = await this.api.uploadUrl({
+                        url: urlVal,
+                        title: uploadTitleInput.value.trim() || undefined,
+                        tagId: uploadTagSelect.value,
+                    });
+                    alert(`✓ Success! Created ${res.clipsCreated || "new"} clips and uploaded to production!\n(Local temporary files automatically deleted)`);
+                    uploadUrlInput.value = "";
+                    uploadTitleInput.value = "";
+                    this.setUploadFormVisibility(false);
+                } catch (error) {
+                    console.error("Link import failed", error);
+                    alert(error instanceof Error ? error.message : "Failed to import video from link. Make sure local server is running (npm run server).");
+                } finally {
+                    submitUploadBtn.disabled = false;
+                    submitUploadBtn.textContent = originalText;
+                }
+                return;
+            }
+
+            if (!fileInput.files?.length) {
+                alert("Please select at least one video file to upload.");
                 return;
             }
 
@@ -390,7 +474,18 @@ export default class Metadata {
             }
         });
 
-        uploadFormWrapper.append(uploadDragHandle, closeUploadBtn, fileInput, filePreviewBox, uploadTitleInput, uploadTagSelect, qualityNotice, submitUploadBtn);
+        uploadFormWrapper.append(
+            uploadDragHandle,
+            closeUploadBtn,
+            modeSelector,
+            uploadUrlInput,
+            fileInput,
+            filePreviewBox,
+            uploadTitleInput,
+            uploadTagSelect,
+            qualityNotice,
+            submitUploadBtn
+        );
         this.uploadFormWrapper = uploadFormWrapper;
         if (section === 1) { this.html.appRoot.appendChild(this.uploadFormWrapper); }
     }

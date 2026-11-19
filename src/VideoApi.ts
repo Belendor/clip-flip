@@ -123,6 +123,31 @@ export default class VideoApi {
         }
     }
 
+    async uploadUrl(payload: {
+        url?: string;
+        urls?: string[];
+        title?: string;
+        tagId?: number | string;
+        tags?: string[];
+        maxSegments?: number;
+    }): Promise<{ success: boolean; message: string; clipsCreated: number }> {
+        const response = await fetch(`${config.apiUrl}/upload-url`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: "include",
+        });
+        if (!response.ok) {
+            let msg = `URL import failed (${response.status})`;
+            try {
+                const data = await response.json();
+                if (data.error) msg = data.error;
+            } catch (_) {}
+            throw new Error(msg);
+        }
+        return response.json();
+    }
+
     async updateUserPreferences(payload: { preference?: string; blacklist?: string[]; userId?: number }): Promise<{ success: boolean; preference?: string; blacklist?: string[] }> {
         return this.request<{ success: boolean; preference?: string; blacklist?: string[] }>("/user/preferences", {
             method: "POST",

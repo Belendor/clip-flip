@@ -18,7 +18,8 @@
     "generate-tags": "tsx src/generate-tag-pages.ts",
     "recognize": "tsx scripts/recognize.ts",
     "crawl": "tsx scripts/crawler/cli.ts",
-    "upload:folder": "tsx scripts/upload-folder.ts"
+    "upload:folder": "tsx scripts/upload-folder.ts",
+    "upload:link": "tsx scripts/upload-link.ts"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.7",

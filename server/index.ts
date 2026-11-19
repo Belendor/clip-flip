@@ -1142,6 +1142,344 @@ app.post(
   }
 );
 
+// Helper for downloading video from remote URL
+async function downloadRemoteMedia(url: string, destPath: string): Promise<string> {
+  let finalUrl = url.trim();
+  const watchMatch = finalUrl.match(/redgifs\.com\/(?:watch|ifr)\/([a-zA-Z0-9]+)/i);
+  if (watchMatch) {
+    try {
+      const authRes = await axios.get("https://api.redgifs.com/v2/auth/temporary", {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        timeout: 10000,
+      });
+      const token = authRes.data?.token;
+      if (token) {
+        const gifRes = await axios.get(`https://api.redgifs.com/v2/gifs/${watchMatch[1].toLowerCase()}`, {
+          headers: { Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0" },
+          timeout: 10000,
+        });
+        if (gifRes.data?.gif?.urls?.hd) {
+          finalUrl = gifRes.data.gif.urls.hd;
+        }
+      }
+    } catch (_) {}
+  }
+
+  const response = await axios({
+    method: "GET",
+    url: finalUrl,
+    responseType: "stream",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      Referer: "https://www.redgifs.com/",
+    },
+    timeout: 180000,
+  });
+
+  const writer = fsSync.createWriteStream(destPath);
+  response.data.pipe(writer);
+
+  return new Promise((resolve, reject) => {
+    writer.on("finish", () => {
+      writer.close();
+      resolve(finalUrl);
+    });
+    writer.on("error", (err) => {
+      try { if (fsSync.existsSync(destPath)) fsSync.unlinkSync(destPath); } catch (_) {}
+      reject(err);
+    });
+  });
+}
+
+// Ingest video directly from link(s) (e.g. RedGIFs .m4s / .mp4) -> download -> slice -> upload to prod -> delete
+app.post("/upload-url", async (req: Request, res: Response) => {
+  const { url, urls, title, tagId, tags: bodyTags, maxSegments = 10 } = req.body;
+
+  const rawList: string[] = [];
+  if (Array.isArray(urls)) {
+    rawList.push(...urls);
+  } else if (typeof urls === "string") {
+    rawList.push(...urls.split(/[\r\n,]+/).map((s: string) => s.trim()).filter(Boolean));
+  }
+  if (typeof url === "string" && url.trim()) {
+    rawList.push(...url.trim().split(/[\r\n,]+/).map((s: string) => s.trim()).filter(Boolean));
+  }
+
+  const cleanUrls = Array.from(new Set(rawList.map((u) => u.trim()))).filter(
+    (u) => u.startsWith("http://") || u.startsWith("https://")
+  );
+
+  if (cleanUrls.length === 0) {
+    return res.status(400).json({ error: "Please provide at least one valid video URL (e.g. https://media.redgifs.com/...)" });
+  }
+
+  if (!fsSync.existsSync(tempBaseDir)) fsSync.mkdirSync(tempBaseDir, { recursive: true });
+  if (!fsSync.existsSync(tempThumbDir)) fsSync.mkdirSync(tempThumbDir, { recursive: true });
+
+  const uploaderId =
+    req.cookies?.userId && !isNaN(Number(req.cookies.userId))
+      ? Number(req.cookies.userId)
+      : req.body.userId && !isNaN(Number(req.body.userId))
+        ? Number(req.body.userId)
+        : null;
+
+  const segmentLength = 4;
+  const processedSegments: SegmentItem[] = [];
+  const tempFilesToClean: string[] = [];
+
+  const cleanupAll = () => {
+    for (const f of tempFilesToClean) {
+      try {
+        if (fsSync.existsSync(f)) fsSync.unlinkSync(f);
+      } catch (_) {}
+    }
+  };
+
+  try {
+    for (let uIdx = 0; uIdx < cleanUrls.length; uIdx++) {
+      const sourceUrl = cleanUrls[uIdx];
+      const rawTempKey = crypto.randomUUID();
+      const rawTempPath = path.join(tempBaseDir, `raw_${rawTempKey}.mp4`);
+      tempFilesToClean.push(rawTempPath);
+
+      console.log(`[upload-url] Downloading (${uIdx + 1}/${cleanUrls.length}): ${sourceUrl}`);
+      const resolvedUrl = await downloadRemoteMedia(sourceUrl, rawTempPath);
+
+      const duration = getVideoDuration(rawTempPath);
+      console.log(`[upload-url] Downloaded successfully! Duration: ${duration.toFixed(1)}s`);
+
+      const urlObj = new URL(resolvedUrl);
+      const urlFileName = path.basename(urlObj.pathname);
+      const baseTitle =
+        title && String(title).trim()
+          ? String(title).trim()
+          : path.parse(urlFileName).name || `Clip ${uIdx + 1}`;
+
+      // Case 1: Already a short clip (2s to 5.05s)
+      if (duration <= 5.05 && duration >= 1.95) {
+        const tempKey = crypto.randomUUID();
+        const tempVideoName = `${tempKey}.mp4`;
+        const tempFirstThumbName = `${tempKey}_first.jpg`;
+        const tempMiddleThumbName = `${tempKey}_middle.jpg`;
+
+        const videoOut = path.join(tempBaseDir, tempVideoName);
+        const firstOut = path.join(tempThumbDir, tempFirstThumbName);
+        const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
+        const mid = (duration / 2).toFixed(2);
+
+        tempFilesToClean.push(videoOut, firstOut, middleOut);
+
+        execFileSync(
+          "ffmpeg",
+          [
+            "-y",
+            "-ss", "0",
+            "-i", rawTempPath,
+            "-t", String(duration),
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "22",
+            "-maxrate", "6M",
+            "-bufsize", "12M",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-vf", "scale=min(1920\\,iw):-2",
+            videoOut,
+          ],
+          { stdio: "pipe" }
+        );
+
+        execFileSync("ffmpeg", ["-y", "-ss", "0", "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
+        execFileSync("ffmpeg", ["-y", "-ss", String(mid), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", middleOut], { stdio: "pipe" });
+
+        processedSegments.push({
+          tempKey,
+          tempVideoName,
+          tempFirstThumbName,
+          tempMiddleThumbName,
+          title: baseTitle,
+          seriesNr: 1,
+          seriesTotal: 1,
+          startTime: 0,
+          endTime: duration,
+        });
+      } else {
+        // Case 2: Uncut / long video -> Slice into 4-second segments
+        const totalSegments = Math.min(
+          Math.max(1, Math.floor(duration / segmentLength)),
+          Number(maxSegments) || 10
+        );
+
+        let segNr = 1;
+        for (let start = 0; start + segmentLength <= duration && segNr <= totalSegments; start += segmentLength) {
+          const end = start + segmentLength;
+          const mid = ((start + end) / 2).toFixed(2);
+
+          const tempKey = crypto.randomUUID();
+          const tempVideoName = `${tempKey}.mp4`;
+          const tempFirstThumbName = `${tempKey}_first.jpg`;
+          const tempMiddleThumbName = `${tempKey}_middle.jpg`;
+
+          const videoOut = path.join(tempBaseDir, tempVideoName);
+          const firstOut = path.join(tempThumbDir, tempFirstThumbName);
+          const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
+
+          tempFilesToClean.push(videoOut, firstOut, middleOut);
+
+          execFileSync(
+            "ffmpeg",
+            [
+              "-y",
+              "-ss", String(start),
+              "-i", rawTempPath,
+              "-t", String(segmentLength),
+              "-c:v", "libx264",
+              "-preset", "fast",
+              "-crf", "22",
+              "-maxrate", "6M",
+              "-bufsize", "12M",
+              "-c:a", "aac",
+              "-b:a", "128k",
+              "-vf", "scale=min(1920\\,iw):-2",
+              videoOut,
+            ],
+            { stdio: "pipe" }
+          );
+
+          execFileSync("ffmpeg", ["-y", "-ss", String(start), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
+          execFileSync("ffmpeg", ["-y", "-ss", String(mid), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", middleOut], { stdio: "pipe" });
+
+          processedSegments.push({
+            tempKey,
+            tempVideoName,
+            tempFirstThumbName,
+            tempMiddleThumbName,
+            title: baseTitle,
+            seriesNr: segNr++,
+            seriesTotal: totalSegments,
+            startTime: start,
+            endTime: end,
+          });
+        }
+      }
+
+      // Immediately delete the raw downloaded video
+      try {
+        if (fsSync.existsSync(rawTempPath)) fsSync.unlinkSync(rawTempPath);
+      } catch (_) {}
+    }
+
+    if (processedSegments.length === 0) {
+      cleanupAll();
+      return res.status(400).json({ error: "No valid video segments could be extracted." });
+    }
+
+    const targetUrl = process.env.CLIPFLIP_TARGET_URL || "https://clip-flip.com";
+    const isProduction =
+      process.env.NODE_ENV === "production" ||
+      fsSync.existsSync("/var/www/clipflip") ||
+      Boolean(req.headers.host && (req.headers.host.includes("clip-flip.com") || req.headers.host.includes("56.228.95.201")));
+
+    const confirmResults: any[] = [];
+
+    // When running locally, upload to production server
+    if (!isProduction) {
+      console.log(`[upload-url] Uploading ${processedSegments.length} sliced segments to production (${targetUrl})...`);
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < processedSegments.length; i += BATCH_SIZE) {
+        const batch = processedSegments.slice(i, i + BATCH_SIZE);
+        const formData = new FormData();
+
+        formData.append(
+          "metadata",
+          JSON.stringify({
+            segments: batch,
+            tagId,
+            tags: bodyTags,
+            userId: uploaderId,
+          })
+        );
+
+        for (const seg of batch) {
+          const videoPath = path.join(tempBaseDir, seg.tempVideoName);
+          const firstThumbPath = path.join(tempThumbDir, seg.tempFirstThumbName);
+          const midThumbPath = path.join(tempThumbDir, seg.tempMiddleThumbName);
+
+          formData.append("videos", fsSync.createReadStream(videoPath), seg.tempVideoName);
+          if (fsSync.existsSync(firstThumbPath)) {
+            formData.append("thumbs", fsSync.createReadStream(firstThumbPath), seg.tempFirstThumbName);
+          }
+          if (fsSync.existsSync(midThumbPath)) {
+            formData.append("thumbs", fsSync.createReadStream(midThumbPath), seg.tempMiddleThumbName);
+          }
+        }
+
+        const confirmResponse = await axios.post(
+          `${targetUrl.replace(/\/+$/, "")}/api/confirm-segments`,
+          formData,
+          {
+            headers: { ...formData.getHeaders() },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: 180000,
+          }
+        );
+
+        if (confirmResponse.data?.videos) {
+          confirmResults.push(...confirmResponse.data.videos);
+        }
+      }
+    } else {
+      // If executed directly on production, save to production storage directly
+      for (const seg of processedSegments) {
+        const videoPath = path.join(tempBaseDir, seg.tempVideoName);
+        const firstThumbPath = path.join(tempThumbDir, seg.tempFirstThumbName);
+        const midThumbPath = path.join(tempThumbDir, seg.tempMiddleThumbName);
+
+        const newVideo = await prisma.newVideo.create({
+          data: {
+            title: seg.title,
+            startTime: seg.startTime,
+            endTime: seg.endTime,
+            seriesNr: seg.seriesNr ?? null,
+            seriesTotal: seg.seriesTotal ?? null,
+            userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
+            tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
+          },
+          include: { tags: true },
+        });
+
+        const segmentId = newVideo.id;
+        const destVideo = path.join(outputDir, `${segmentId}.mp4`);
+        const destFirstThumb = path.join(outputDirThumbnails, `${segmentId}_first.jpg`);
+        const destMidThumb = path.join(outputDirThumbnails, `${segmentId}_middle.jpg`);
+
+        moveFileCrossDevice(videoPath, destVideo);
+        if (fsSync.existsSync(firstThumbPath)) moveFileCrossDevice(firstThumbPath, destFirstThumb);
+        if (fsSync.existsSync(midThumbPath)) moveFileCrossDevice(midThumbPath, destMidThumb);
+
+        confirmResults.push(newVideo);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Processed ${cleanUrls.length} URL(s) into ${processedSegments.length} clips and uploaded to production! (0 bytes kept on local machine)`,
+      clipsCreated: processedSegments.length,
+      videos: confirmResults,
+    });
+  } catch (error) {
+    console.error("Error in upload-url:", error);
+    return res.status(500).json({
+      error: "Failed to download and process video from URL",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    // ALWAYS clean up all files from the local computer!
+    cleanupAll();
+  }
+});
+
 const confirmUpload = multer({ dest: tempBaseDir });
 
 app.post(
