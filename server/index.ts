@@ -2977,6 +2977,7 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
   const cleanPath = (originalUri || '').split('?')[0];
 
   let rawVideoUrl = "";
+  let thumbPath = "/thumbnails/preview.jpg";
   let title = "ClipFlip";
 
   // Check different URL patterns
@@ -2989,6 +2990,7 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
     if (newMatch) {
       const vidId = parseInt(newMatch[1], 10);
       rawVideoUrl = `/video1/new/${vidId}.mp4?raw=1`;
+      thumbPath = `/video1/new/thumbnails/${vidId}_middle.jpg`;
       const newVid = await prisma.newVideo.findUnique({
         where: { id: vidId },
         include: { tags: true, models: true },
@@ -3003,6 +3005,7 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
       // Determine if batch 1 or batch 2
       const isBatch2 = cleanPath.includes('/video1/') || vidId >= 11256;
       rawVideoUrl = isBatch2 ? `/video1/${vidId}.mp4?raw=1` : `/video/${vidId}.mp4?raw=1`;
+      thumbPath = `/thumbnail/${vidId}.jpg`;
       const vid = await prisma.video.findUnique({
         where: { id: vidId },
         include: { tags: true, models: true },
@@ -3027,6 +3030,7 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
   const proto = isLocal ? 'http' : 'https';
   const fullBase = `${proto}://${canonicalHost}`;
   const absoluteRawUrl = `${fullBase}${rawVideoUrl}`;
+  const absoluteThumbUrl = `${fullBase}${thumbPath}`;
   const safeTitle = escapeHtml(title);
 
   const html = `<!DOCTYPE html>
@@ -3038,15 +3042,24 @@ const handleVideoPlayer = async (req: Request, res: Response) => {
 
   <meta property="og:site_name" content="ClipFlip">
   <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="Watch on ClipFlip">
   <meta property="og:type" content="video.other">
   <meta property="og:video" content="${absoluteRawUrl}">
   <meta property="og:video:secure_url" content="${absoluteRawUrl}">
   <meta property="og:video:type" content="video/mp4">
+  <meta property="og:video:width" content="720">
+  <meta property="og:video:height" content="1280">
+  <meta property="og:image" content="${absoluteThumbUrl}">
+  <meta property="og:image:width" content="720">
+  <meta property="og:image:height" content="1280">
 
   <meta name="twitter:card" content="player">
   <meta name="twitter:title" content="${safeTitle}">
+  <meta name="twitter:image" content="${absoluteThumbUrl}">
   <meta name="twitter:player:stream" content="${absoluteRawUrl}">
   <meta name="twitter:player:stream:content_type" content="video/mp4">
+  <meta name="twitter:player:width" content="720">
+  <meta name="twitter:player:height" content="1280">
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
