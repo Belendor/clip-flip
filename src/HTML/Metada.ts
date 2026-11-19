@@ -233,6 +233,47 @@ export default class Metadata {
         uploadUrlInput.rows = 2;
         uploadUrlInput.className = "upload-text-input block w-full mb-2 font-mono text-xs";
 
+        const urlInfoBadge = document.createElement("div");
+        urlInfoBadge.className = "text-[11px] text-sky-300 font-mono mb-2 hidden bg-sky-950/40 p-1.5 rounded border border-sky-500/30";
+
+        let redgifsDebounce: any = null;
+        uploadUrlInput.addEventListener("input", () => {
+            const rawVal = uploadUrlInput.value.trim();
+            if (!rawVal || !rawVal.includes("redgifs.com")) {
+                urlInfoBadge.classList.add("hidden");
+                urlInfoBadge.innerHTML = "";
+                return;
+            }
+
+            clearTimeout(redgifsDebounce);
+            redgifsDebounce = setTimeout(async () => {
+                const firstUrl = rawVal.split(/[\r\n,]+/)[0]?.trim();
+                if (!firstUrl) return;
+
+                urlInfoBadge.classList.remove("hidden");
+                urlInfoBadge.innerHTML = `<span class="animate-pulse">🔍 Inspecting RedGIFs link...</span>`;
+
+                try {
+                    const res = await fetch(`${config.apiUrl}/redgifs-info?url=${encodeURIComponent(firstUrl)}`);
+                    if (res.ok) {
+                        const info = await res.json();
+                        if (info.uploader || info.title) {
+                            urlInfoBadge.innerHTML = `👤 Uploader: <strong class="text-white">${info.uploader || "Unknown"}</strong> &nbsp;|&nbsp; ID: <strong class="text-white">${info.videoId || ""}</strong>`;
+                            if (!uploadTitleInput.value.trim() && info.title) {
+                                uploadTitleInput.value = info.title;
+                            }
+                        } else {
+                            urlInfoBadge.classList.add("hidden");
+                        }
+                    } else {
+                        urlInfoBadge.classList.add("hidden");
+                    }
+                } catch (_) {
+                    urlInfoBadge.classList.add("hidden");
+                }
+            }, 400);
+        });
+
         const fileInput = document.createElement("input");
         fileInput.type = "file";
         fileInput.accept = "video/mp4,video/webm,video/*";
@@ -479,6 +520,7 @@ export default class Metadata {
             closeUploadBtn,
             modeSelector,
             uploadUrlInput,
+            urlInfoBadge,
             fileInput,
             filePreviewBox,
             uploadTitleInput,

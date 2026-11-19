@@ -60,6 +60,7 @@ interface SegmentItem {
   tempFirstThumbName: string;
   tempMiddleThumbName: string;
   title: string;
+  model?: string;
   seriesNr?: number;
   seriesTotal?: number;
   startTime: number;
@@ -1142,28 +1143,90 @@ app.post(
   }
 );
 
-// Helper for downloading video from remote URL
-async function downloadRemoteMedia(url: string, destPath: string): Promise<string> {
-  let finalUrl = url.trim();
-  const watchMatch = finalUrl.match(/redgifs\.com\/(?:watch|ifr)\/([a-zA-Z0-9]+)/i);
-  if (watchMatch) {
+// Helper to query RedGIFs metadata (uploader/model, canonical ID, tags, mediaUrl)
+async function fetchRedGifsDetails(url: string): Promise<{ uploader?: string; videoId?: string; title?: string; tags?: string[]; mediaUrl?: string }> {
+  const match =
+    url.match(/redgifs\.com\/(?:watch\/|ifr\/)([a-zA-Z0-9]+)/i) ||
+    url.match(/redgifs\.com\/(?:[a-zA-Z0-9_\/]*\/)?([a-zA-Z0-9]+)(?:-mobile|-silent)?\.(?:m4s|mp4|webm)/i);
+
+  if (!match) {
     try {
-      const authRes = await axios.get("https://api.redgifs.com/v2/auth/temporary", {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        timeout: 10000,
-      });
-      const token = authRes.data?.token;
-      if (token) {
-        const gifRes = await axios.get(`https://api.redgifs.com/v2/gifs/${watchMatch[1].toLowerCase()}`, {
-          headers: { Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0" },
-          timeout: 10000,
-        });
-        if (gifRes.data?.gif?.urls?.hd) {
-          finalUrl = gifRes.data.gif.urls.hd;
-        }
-      }
-    } catch (_) {}
+      const u = new URL(url);
+      const name = path.parse(path.basename(u.pathname)).name;
+      return { videoId: name, title: name };
+    } catch (_) {
+      return {};
+    }
   }
+
+  const rawId = match[1];
+  try {
+    const authRes = await axios.get("https://api.redgifs.com/v2/auth/temporary", {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 10000,
+    });
+    const token = authRes.data?.token;
+    if (!token) return { videoId: rawId, title: rawId };
+
+    const gifRes = await axios.get(`https://api.redgifs.com/v2/gifs/${rawId.toLowerCase()}`, {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0" },
+      timeout: 10000,
+    });
+
+    const gif = gifRes.data?.gif;
+    if (!gif) return { videoId: rawId, title: rawId };
+
+    let casedId = rawId;
+    if (gif.urls?.hd) {
+      const hdMatch = gif.urls.hd.match(/redgifs\.com\/([a-zA-Z0-9]+)\.mp4/i);
+      if (hdMatch) casedId = hdMatch[1];
+    }
+
+    const uploader = gif.userName || undefined;
+    const title = uploader ? `${uploader},${casedId}` : casedId;
+
+    return {
+      uploader,
+      videoId: casedId,
+      title,
+      tags: gif.tags || [],
+      mediaUrl: gif.urls?.hd || undefined,
+    };
+  } catch (_) {
+    return { videoId: rawId, title: rawId };
+  }
+}
+
+// Endpoint to inspect RedGIFs metadata (returns uploader, title, tags)
+app.get("/redgifs-info", async (req: Request, res: Response) => {
+  const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+  if (!rawUrl) {
+    return res.status(400).json({ error: "Missing url parameter" });
+  }
+  try {
+    const details = await fetchRedGifsDetails(rawUrl);
+    return res.json(details);
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to retrieve RedGIFs info" });
+  }
+});
+
+// Helper for downloading video from remote URL
+async function downloadRemoteMedia(url: string, destPath: string): Promise<{ finalUrl: string; uploader?: string; videoId?: string; autoTitle?: string; tags?: string[] }> {
+  let finalUrl = url.trim();
+  let uploader: string | undefined;
+  let videoId: string | undefined;
+  let autoTitle: string | undefined;
+  let tags: string[] = [];
+
+  try {
+    const detail = await fetchRedGifsDetails(finalUrl);
+    if (detail.mediaUrl) finalUrl = detail.mediaUrl;
+    uploader = detail.uploader;
+    videoId = detail.videoId;
+    autoTitle = detail.title;
+    if (detail.tags) tags = detail.tags;
+  } catch (_) {}
 
   const response = await axios({
     method: "GET",
@@ -1179,16 +1242,18 @@ async function downloadRemoteMedia(url: string, destPath: string): Promise<strin
   const writer = fsSync.createWriteStream(destPath);
   response.data.pipe(writer);
 
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     writer.on("finish", () => {
       writer.close();
-      resolve(finalUrl);
+      resolve();
     });
     writer.on("error", (err) => {
       try { if (fsSync.existsSync(destPath)) fsSync.unlinkSync(destPath); } catch (_) {}
       reject(err);
     });
   });
+
+  return { finalUrl, uploader, videoId, autoTitle, tags };
 }
 
 // Ingest video directly from link(s) (e.g. RedGIFs .m4s / .mp4) -> download -> slice -> upload to prod -> delete
@@ -1243,17 +1308,18 @@ app.post("/upload-url", async (req: Request, res: Response) => {
       tempFilesToClean.push(rawTempPath);
 
       console.log(`[upload-url] Downloading (${uIdx + 1}/${cleanUrls.length}): ${sourceUrl}`);
-      const resolvedUrl = await downloadRemoteMedia(sourceUrl, rawTempPath);
+      const { finalUrl, uploader, videoId, autoTitle } = await downloadRemoteMedia(sourceUrl, rawTempPath);
 
       const duration = getVideoDuration(rawTempPath);
-      console.log(`[upload-url] Downloaded successfully! Duration: ${duration.toFixed(1)}s`);
+      console.log(`[upload-url] Downloaded successfully! Duration: ${duration.toFixed(1)}s (Uploader: ${uploader || 'none'})`);
 
-      const urlObj = new URL(resolvedUrl);
+      const urlObj = new URL(finalUrl);
       const urlFileName = path.basename(urlObj.pathname);
+      const fallbackTitle = path.parse(urlFileName).name || `Clip ${uIdx + 1}`;
       const baseTitle =
         title && String(title).trim()
           ? String(title).trim()
-          : path.parse(urlFileName).name || `Clip ${uIdx + 1}`;
+          : (autoTitle || fallbackTitle);
 
       // Case 1: Already a short clip (2s to 5.05s)
       if (duration <= 5.05 && duration >= 1.95) {
@@ -1298,6 +1364,7 @@ app.post("/upload-url", async (req: Request, res: Response) => {
           tempFirstThumbName,
           tempMiddleThumbName,
           title: baseTitle,
+          model: uploader,
           seriesNr: 1,
           seriesTotal: 1,
           startTime: 0,
@@ -1355,6 +1422,7 @@ app.post("/upload-url", async (req: Request, res: Response) => {
             tempFirstThumbName,
             tempMiddleThumbName,
             title: baseTitle,
+            model: uploader,
             seriesNr: segNr++,
             seriesTotal: totalSegments,
             startTime: start,
@@ -1436,6 +1504,9 @@ app.post("/upload-url", async (req: Request, res: Response) => {
         const firstThumbPath = path.join(tempThumbDir, seg.tempFirstThumbName);
         const midThumbPath = path.join(tempThumbDir, seg.tempMiddleThumbName);
 
+        const titleParts = seg.title ? seg.title.split(",") : [];
+        const modelCandidate = seg.model || (titleParts.length > 1 ? titleParts[0].trim() : undefined);
+
         const newVideo = await prisma.newVideo.create({
           data: {
             title: seg.title,
@@ -1445,8 +1516,18 @@ app.post("/upload-url", async (req: Request, res: Response) => {
             seriesTotal: seg.seriesTotal ?? null,
             userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
             tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
+            models: modelCandidate
+              ? {
+                  connectOrCreate: [
+                    {
+                      where: { name: modelCandidate },
+                      create: { name: modelCandidate },
+                    },
+                  ],
+                }
+              : undefined,
           },
-          include: { tags: true },
+          include: { tags: true, models: true },
         });
 
         const segmentId = newVideo.id;
@@ -1570,6 +1651,9 @@ app.post(
             tagConnectOrCreate = [{ where: { title: metaTags.trim() }, create: { title: metaTags.trim() } }];
           }
 
+          const titleParts = seg.title ? seg.title.split(",") : [];
+          const modelCandidate = seg.model || (titleParts.length > 1 ? titleParts[0].trim() : undefined);
+
           const newVideo = await tx.newVideo.create({
             data: {
               title: seg.title,
@@ -1581,8 +1665,18 @@ app.post(
               tags: tagConnectOrCreate.length > 0
                 ? { connectOrCreate: tagConnectOrCreate }
                 : (tagId ? { connect: [{ id: Number(tagId) }] } : undefined),
+              models: modelCandidate
+                ? {
+                    connectOrCreate: [
+                      {
+                        where: { name: modelCandidate },
+                        create: { name: modelCandidate },
+                      },
+                    ],
+                  }
+                : undefined,
             },
-            include: { tags: true },
+            include: { tags: true, models: true },
           });
 
           const segmentId = newVideo.id;
