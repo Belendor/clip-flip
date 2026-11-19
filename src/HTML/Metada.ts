@@ -582,13 +582,23 @@ export default class Metadata {
         };
 
         const tabRandom = createTab("random", "Random");
-        const tabLowest = createTab("lowest", "Lowest Likes");
         const tabTrending = createTab("trending", "Trending");
         const tabLiked = createTab("liked", "Liked");
-        tabsContainer.append(tabRandom, tabLowest, tabTrending, tabLiked);
+        tabsContainer.append(tabRandom, tabTrending, tabLiked);
+
+        // Admin-only: "Lowest Likes" tab
+        const isAdmin = !!this.user?.currentUser?.isAdmin
+            || (!this.user?.currentUser?.isGuest && this.user?.currentUser?.email?.toLowerCase() === "belendorrr@gmail.com")
+            || (this.user?.currentUser && this.user.currentUser.username?.toLowerCase() === "admin")
+            || (this.user?.currentUser && this.user.currentUser.username?.toLowerCase() === "belendor");
+
+        if (isAdmin) {
+            const tabLowest = createTab("lowest", "Lowest Likes");
+            tabsContainer.append(tabLowest);
+        }
 
         // "New" tab is only visible when logged in!
-        if (this.user?.currentUser) {
+        if (this.user?.currentUser && !this.user.currentUser.isGuest) {
             const tabNew = createTab("new", "New");
             tabsContainer.append(tabNew);
         }

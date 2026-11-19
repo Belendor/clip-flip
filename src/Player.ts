@@ -65,7 +65,12 @@ class Players {
             if (user?.blacklist && Array.isArray(user.blacklist)) {
                 this.state.setBlacklistTags(user.blacklist);
             }
+            const isAdmin = !!user?.isAdmin || (!user?.isGuest && user?.email?.toLowerCase() === "belendorrr@gmail.com");
             if (!user && (this.state.state === "new" || this.state.state === "liked")) {
+                await this.switchMode("trending");
+                return;
+            }
+            if (this.state.state === "lowest" && !isAdmin) {
                 await this.switchMode("trending");
                 return;
             }
@@ -90,6 +95,14 @@ class Players {
         }
 
         if (this.state.state === "liked" && !this.user.currentUser) {
+            this.state.state = "trending";
+            try { localStorage.setItem("clipflip_mode", "trending"); } catch (_) {}
+            this.html.metadata.init();
+            this.attachMetadataTabListeners();
+        }
+
+        const isAdmin = !!this.user.currentUser?.isAdmin || (!this.user.currentUser?.isGuest && this.user.currentUser?.email?.toLowerCase() === "belendorrr@gmail.com");
+        if (this.state.state === "lowest" && !isAdmin) {
             this.state.state = "trending";
             try { localStorage.setItem("clipflip_mode", "trending"); } catch (_) {}
             this.html.metadata.init();
@@ -461,6 +474,11 @@ class Players {
                     if (!mode) return;
                     if (mode === "liked" && !this.user.currentUser) {
                         this.user.promptLogin("Please sign in to view your liked videos");
+                        return;
+                    }
+                    const isAdmin = !!this.user.currentUser?.isAdmin || (!this.user.currentUser?.isGuest && this.user.currentUser?.email?.toLowerCase() === "belendorrr@gmail.com");
+                    if (mode === "lowest" && !isAdmin) {
+                        this.user.promptLogin("Admin sign-in required for Lowest Likes mode");
                         return;
                     }
                     metaTab.querySelectorAll(".metadata-tab").forEach(t => t.classList.remove("active"));

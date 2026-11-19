@@ -2456,6 +2456,15 @@ app.post("/auth/register", async (req: Request, res: Response) => {
   }
 });
 
+const ADMIN_EMAILS = ["belendorrr@gmail.com"];
+
+function checkIsAdmin(user: { email?: string | null; username?: string | null } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) return true;
+  if (user.username && (user.username.toLowerCase() === "admin" || user.username.toLowerCase() === "belendor")) return true;
+  return false;
+}
+
 app.post("/auth/login", async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
@@ -2512,6 +2521,7 @@ app.post("/auth/login", async (req: Request, res: Response) => {
         email: user.email,
         picture: user.picture,
         isGuest: !!user.isGuest,
+        isAdmin: checkIsAdmin(user),
       },
     });
   } catch (err: any) {
@@ -2519,8 +2529,6 @@ app.post("/auth/login", async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Login failed." });
   }
 });
-
-const ADMIN_EMAILS = ["belendorrr@gmail.com"];
 
 app.get("/auth/me", async (req, res) => {
   try {
@@ -2636,7 +2644,7 @@ app.get("/auth/me", async (req, res) => {
       setBrowserCookie(res, browserId);
     }
 
-    const isAdmin = user.email ? ADMIN_EMAILS.includes(user.email.toLowerCase()) : false;
+    const isAdmin = checkIsAdmin(user);
     const [likesCount, approvedUploads, pendingUploads] = await Promise.all([
       prisma.videoReaction.count({
         where: { userId: user.id, type: "like" },
