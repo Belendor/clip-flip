@@ -786,7 +786,7 @@ class State {
     }
 
     async fetchLowestVideos(): Promise<void> {
-        console.log("Fetching lowest (least liked) videos");
+        console.log("Fetching oldest (lowest likes) videos");
         this.clearEmptyState();
         try {
             const videos = await this.api.fetchVideos("?sort=lowest");

@@ -593,7 +593,7 @@ export default class Metadata {
             || (this.user?.currentUser && this.user.currentUser.username?.toLowerCase() === "belendor");
 
         if (isAdmin) {
-            const tabLowest = createTab("lowest", "Lowest Likes");
+            const tabLowest = createTab("lowest", "Oldest");
             tabsContainer.append(tabLowest);
         }
 

@@ -585,7 +585,7 @@ app.get("/videos", async (req: Request, res: Response) => {
     return res.json(trendingOnly);
   }
 
-  if (sort === "lowest" || sort === "lowest_likes" || sort === "least_liked") {
+  if (sort === "oldest" || sort === "lowest" || sort === "lowest_likes" || sort === "least_liked") {
     const lowestOnly = [...mappedVideos];
     lowestOnly.sort((a, b) => {
       if (a.likes !== b.likes) {

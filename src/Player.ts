@@ -114,7 +114,7 @@ class Players {
             this.state.randomized = false;
             await this.state.fetchTrendingVideos();
         } else if (this.state.state === "lowest") {
-            this.showLoader("Loading lowest liked clips...");
+            this.showLoader("Loading oldest clips...");
             this.state.randomized = false;
             await this.state.fetchLowestVideos();
         } else if (this.state.state === "liked") {
@@ -478,7 +478,7 @@ class Players {
                     }
                     const isAdmin = !!this.user.currentUser?.isAdmin || (!this.user.currentUser?.isGuest && this.user.currentUser?.email?.toLowerCase() === "belendorrr@gmail.com");
                     if (mode === "lowest" && !isAdmin) {
-                        this.user.promptLogin("Admin sign-in required for Lowest Likes mode");
+                        this.user.promptLogin("Admin sign-in required for Oldest mode");
                         return;
                     }
                     metaTab.querySelectorAll(".metadata-tab").forEach(t => t.classList.remove("active"));
@@ -1483,7 +1483,7 @@ class Players {
             normalizedMode === "trending"
                 ? "Loading trending videos..."
                 : normalizedMode === "lowest"
-                ? "Loading lowest liked clips..."
+                ? "Loading oldest clips..."
                 : normalizedMode === "liked"
                 ? "Loading liked videos..."
                 : normalizedMode === "new"
