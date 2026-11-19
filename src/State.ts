@@ -5,7 +5,7 @@ import { dbCache } from "./cache";
 
 export type SectionId = 1 | 2 | 3 | 4;
 export type PlayerIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
-type PlayerState = "random" | "trending" | "liked" | "favorite" | "new";
+type PlayerState = "random" | "trending" | "lowest" | "liked" | "favorite" | "new";
 
 type PositionsMap = Record<SectionId, number>;
 
@@ -36,6 +36,7 @@ class State {
     taggedVideos: Video[] | null = null;
     taggedVideosBySection: Map<SectionId, Video[]> = new Map();
     trendingVideos: Video[] | null = null;
+    lowestVideos: Video[] | null = null;
     newVideos: NewVideo[] | null = null;
     likedVideos: Video[] | null = null;
     taggedVideosPromise: Promise<void> | undefined;
@@ -79,6 +80,9 @@ class State {
         } else if (this.state === "trending") {
             this.randomized = false;
             this.fetchTrendingVideos();
+        } else if (this.state === "lowest") {
+            this.randomized = false;
+            this.fetchLowestVideos();
         } else if (this.state === "liked" || this.state === "favorite") {
             this.randomized = false;
             this.fetchLikedVideos();
@@ -116,6 +120,15 @@ class State {
                 });
                 this.trendingVideos = sorted;
 
+                // Prepare lowest liked videos (lowest likes first, natural ascending ID for ties)
+                const lowestSorted = [...cleanVideos].sort((a: any, b: any) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesA !== likesB) return likesA - likesB;
+                    return a.id - b.id;
+                });
+                this.lowestVideos = lowestSorted;
+
                 // Prepare liked videos (most liked first, natural ascending ID for ties)
                 const likedOnly = cleanVideos.filter(v => (v.likes ?? 0) > 0);
                 likedOnly.sort((a: any, b: any) => {
@@ -150,6 +163,9 @@ class State {
                 } else if (this.state === "trending" && this.trendingVideos.length > 0) {
                     this.randomized = false;
                     chosenId = this.trendingVideos[0].id;
+                } else if (this.state === "lowest" && this.lowestVideos && this.lowestVideos.length > 0) {
+                    this.randomized = false;
+                    chosenId = this.lowestVideos[0].id;
                 } else if ((this.state === "liked" || this.state === "favorite") && this.likedVideos.length > 0) {
                     this.randomized = false;
                     const inLiked = lastId && !this.played.has(lastId) && this.likedVideos.some(v => v.id === lastId);
@@ -473,6 +489,17 @@ class State {
             return 0;
         }
 
+        // Lowest mode (iterate stored array from lowest to highest likes)
+        if (this.state === "lowest") {
+            if (this.lowestVideos != null && this.lowestVideos.length > 0) {
+                const videoIds = this.lowestVideos.map((v) => v.id);
+                const currentIndex = videoIds.indexOf(currentId);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+                return videoIds[nextIndex];
+            }
+            return 0;
+        }
+
         // Tagged / DB videos for this specific section
         const sectionTags = this.activeTags.get(section);
         const hasSectionTags = !!sectionTags && sectionTags.length > 0;
@@ -753,6 +780,39 @@ class State {
             console.error("Failed to fetch trending videos:", error);
             if (!this.trendingVideos) {
                 this.trendingVideos = [];
+                this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            }
+        }
+    }
+
+    async fetchLowestVideos(): Promise<void> {
+        console.log("Fetching lowest (least liked) videos");
+        this.clearEmptyState();
+        try {
+            const videos = await this.api.fetchVideos("?sort=lowest");
+            if (videos && videos.length > 0) {
+                void dbCache.set("cached_all_videos", videos);
+                const sorted = [...videos].sort((a: any, b: any) => {
+                    const likesA = a.likes ?? 0;
+                    const likesB = b.likes ?? 0;
+                    if (likesA !== likesB) return likesA - likesB;
+                    return a.id - b.id;
+                });
+                this.lowestVideos = sorted;
+                this.randomized = false;
+                const topVideo = this.lowestVideos[0];
+                const topId = topVideo ? topVideo.id : 0;
+                this.positions = {
+                    1: topId,
+                    2: topId,
+                    3: topId,
+                    4: topId,
+                };
+            }
+        } catch (error) {
+            console.error("Failed to fetch lowest videos:", error);
+            if (!this.lowestVideos) {
+                this.lowestVideos = [];
                 this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
             }
         }

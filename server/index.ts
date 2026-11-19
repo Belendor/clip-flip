@@ -585,6 +585,17 @@ app.get("/videos", async (req: Request, res: Response) => {
     return res.json(trendingOnly);
   }
 
+  if (sort === "lowest" || sort === "lowest_likes" || sort === "least_liked") {
+    const lowestOnly = [...mappedVideos];
+    lowestOnly.sort((a, b) => {
+      if (a.likes !== b.likes) {
+        return a.likes - b.likes; // lowest likes first (0, then 1, 2...)
+      }
+      return a.id - b.id; // Natural order (1, 2, 3...)
+    });
+    return res.json(lowestOnly);
+  }
+
   const sequenceOrderedVideos = sortVideosPreservingSequence(mappedVideos);
   res.json(sequenceOrderedVideos);
 });

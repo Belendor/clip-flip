@@ -572,7 +572,7 @@ export default class Metadata {
         const tabsContainer = document.createElement("div");
         tabsContainer.className = "metadata-tabs";
 
-        const createTab = (mode: "random" | "trending" | "liked" | "new", label: string) => {
+        const createTab = (mode: "random" | "trending" | "lowest" | "liked" | "new", label: string) => {
             const tab = document.createElement("button");
             tab.type = "button";
             tab.className = `metadata-tab${this.state.state === mode ? " active" : ""}`;
@@ -582,9 +582,10 @@ export default class Metadata {
         };
 
         const tabRandom = createTab("random", "Random");
+        const tabLowest = createTab("lowest", "Lowest Likes");
         const tabTrending = createTab("trending", "Trending");
         const tabLiked = createTab("liked", "Liked");
-        tabsContainer.append(tabRandom, tabTrending, tabLiked);
+        tabsContainer.append(tabRandom, tabLowest, tabTrending, tabLiked);
 
         // "New" tab is only visible when logged in!
         if (this.user?.currentUser) {

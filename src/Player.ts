@@ -100,6 +100,10 @@ class Players {
             this.showLoader("Loading trending videos...");
             this.state.randomized = false;
             await this.state.fetchTrendingVideos();
+        } else if (this.state.state === "lowest") {
+            this.showLoader("Loading lowest liked clips...");
+            this.state.randomized = false;
+            await this.state.fetchLowestVideos();
         } else if (this.state.state === "liked") {
             this.showLoader("Loading liked videos...");
             this.state.randomized = false;
@@ -193,6 +197,8 @@ class Players {
             pool = this.state.likedVideos.map((v) => v.id);
         } else if (this.state.state === "trending" && this.state.trendingVideos?.length) {
             pool = this.state.trendingVideos.map((v) => v.id);
+        } else if (this.state.state === "lowest" && this.state.lowestVideos?.length) {
+            pool = this.state.lowestVideos.map((v) => v.id);
         } else if (this.state.allVideos?.length) {
             pool = this.state.allVideos.map((v) => v.id);
         } else if (this.state.taggedVideos?.length) {
@@ -451,7 +457,7 @@ class Players {
                 metaTab.onclick = async (e) => {
                     const targetBtn = (e.target as HTMLElement)?.closest<HTMLButtonElement>(".metadata-tab");
                     if (!targetBtn) return;
-                    const mode = targetBtn.dataset.mode as "random" | "trending" | "liked" | "new" | "favorite";
+                    const mode = targetBtn.dataset.mode as "random" | "trending" | "lowest" | "liked" | "new" | "favorite";
                     if (!mode) return;
                     if (mode === "liked" && !this.user.currentUser) {
                         this.user.promptLogin("Please sign in to view your liked videos");
@@ -1450,7 +1456,7 @@ class Players {
         }
     }
 
-    public async switchMode(mode: "random" | "trending" | "liked" | "new" | "favorite") {
+    public async switchMode(mode: "random" | "trending" | "lowest" | "liked" | "new" | "favorite") {
         const normalizedMode = mode === "favorite" ? "liked" : mode;
         if (this.state.state === normalizedMode || this.isSwitchingMode) return;
         this.isSwitchingMode = true;
@@ -1458,6 +1464,8 @@ class Players {
         this.showLoader(
             normalizedMode === "trending"
                 ? "Loading trending videos..."
+                : normalizedMode === "lowest"
+                ? "Loading lowest liked clips..."
                 : normalizedMode === "liked"
                 ? "Loading liked videos..."
                 : normalizedMode === "new"
@@ -1483,6 +1491,10 @@ class Players {
                         ? pool[Math.floor(Math.random() * pool.length)].id
                         : this.state.randomInRange(1, this.state.endIndex);
                     this.state.positions = { 1: randomStartId, 2: randomStartId, 3: randomStartId, 4: randomStartId };
+                    break;
+                case "lowest":
+                    this.state.randomized = false;
+                    await this.state.fetchLowestVideos();
                     break;
                 case "trending":
                     this.state.randomized = false;
