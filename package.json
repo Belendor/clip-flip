@@ -17,7 +17,8 @@
     "npx": "tailwindcss init",
     "generate-tags": "tsx src/generate-tag-pages.ts",
     "recognize": "tsx scripts/recognize.ts",
-    "crawl": "tsx scripts/crawler/cli.ts"
+    "crawl": "tsx scripts/crawler/cli.ts",
+    "upload:folder": "tsx scripts/upload-folder.ts"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.7",
