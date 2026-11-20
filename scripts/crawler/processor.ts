@@ -4,6 +4,47 @@ import crypto from "crypto";
 import { execFileSync } from "child_process";
 import type { ProcessedSegment, RedGifsMetadata, ScrapedPost } from "./types";
 
+interface SegmentRange {
+    start: number;
+    end: number;
+    duration: number;
+}
+
+function calculateSegmentRanges(duration: number, maxSegments = 10): SegmentRange[] {
+    if (duration <= 5.05 && duration >= 1.95) {
+        return [{ start: 0, end: duration, duration }];
+    }
+    if (duration > 5.05 && duration < 6.0) {
+        const half = parseFloat((duration / 2).toFixed(2));
+        return [
+            { start: 0, end: half, duration: half },
+            { start: half, end: duration, duration: parseFloat((duration - half).toFixed(2)) },
+        ];
+    }
+    const segmentLength = 4;
+    const ranges: SegmentRange[] = [];
+    let start = 0;
+    while (start < duration && ranges.length < maxSegments) {
+        const remaining = duration - start;
+        if (remaining < 1.95) {
+            if (ranges.length > 0 && (ranges[ranges.length - 1].duration + remaining) <= 5.05) {
+                const last = ranges[ranges.length - 1];
+                last.end = duration;
+                last.duration = parseFloat((last.end - last.start).toFixed(2));
+            }
+            break;
+        }
+        if (remaining <= 5.05) {
+            ranges.push({ start, end: duration, duration: parseFloat(remaining.toFixed(2)) });
+            break;
+        }
+        const end = start + segmentLength;
+        ranges.push({ start, end, duration: segmentLength });
+        start = end;
+    }
+    return ranges;
+}
+
 export class VideoProcessor {
     private tempDir: string;
     private thumbsDir: string;
@@ -86,8 +127,14 @@ export class VideoProcessor {
 
         const baseTitle = post.title || gifMeta?.title || `Clip from r/${post.subreddit}`;
 
-        // Case 1: Short clip (between 2s and 5.05s) -> Use directly
-        if (duration <= 5.05 && duration >= 1.95) {
+        const ranges = calculateSegmentRanges(duration, maxSegments);
+        const totalSegments = ranges.length;
+
+        for (let idx = 0; idx < ranges.length; idx++) {
+            const range = ranges[idx];
+            const segNr = idx + 1;
+            const mid = ((range.start + range.end) / 2).toFixed(2);
+
             const tempKey = crypto.randomUUID();
             const tempVideoName = `${tempKey}.mp4`;
             const tempFirstThumbName = `${tempKey}_first.jpg`;
@@ -96,15 +143,14 @@ export class VideoProcessor {
             const videoOut = path.join(this.tempDir, tempVideoName);
             const firstOut = path.join(this.thumbsDir, tempFirstThumbName);
             const midOut = path.join(this.thumbsDir, tempMiddleThumbName);
-            const mid = (duration / 2).toFixed(2);
 
             execFileSync(
                 "ffmpeg",
                 [
                     "-y",
-                    "-ss", "0",
+                    "-ss", String(range.start),
                     "-i", sourceFilePath,
-                    "-t", String(duration),
+                    "-t", String(range.duration),
                     "-c:v", "libx264",
                     "-preset", "fast",
                     "-crf", "22",
@@ -120,7 +166,7 @@ export class VideoProcessor {
 
             execFileSync(
                 "ffmpeg",
-                ["-y", "-ss", "0", "-i", sourceFilePath, "-strict", "unofficial", "-frames:v", "1", firstOut],
+                ["-y", "-ss", String(range.start), "-i", sourceFilePath, "-strict", "unofficial", "-frames:v", "1", firstOut],
                 { stdio: "pipe" }
             );
 
@@ -139,85 +185,13 @@ export class VideoProcessor {
                 tempFirstThumbName,
                 tempMiddleThumbName,
                 title: baseTitle,
-                duration,
-                startTime: 0,
-                endTime: duration,
-                seriesNr: 1,
-                seriesTotal: 1,
-                tags: uniqueTags,
-            });
-
-            return results;
-        }
-
-        // Case 2: Longer video -> Slice into 4-second segments
-        const possibleSegments = Math.max(1, Math.floor(duration / segmentLength));
-        const totalSegments = Math.min(possibleSegments, maxSegments);
-
-        let segNr = 1;
-        for (let start = 0; start + segmentLength <= duration && segNr <= totalSegments; start += segmentLength) {
-            const end = start + segmentLength;
-            const mid = ((start + end) / 2).toFixed(2);
-
-            const tempKey = crypto.randomUUID();
-            const tempVideoName = `${tempKey}.mp4`;
-            const tempFirstThumbName = `${tempKey}_first.jpg`;
-            const tempMiddleThumbName = `${tempKey}_middle.jpg`;
-
-            const videoOut = path.join(this.tempDir, tempVideoName);
-            const firstOut = path.join(this.thumbsDir, tempFirstThumbName);
-            const midOut = path.join(this.thumbsDir, tempMiddleThumbName);
-
-            execFileSync(
-                "ffmpeg",
-                [
-                    "-y",
-                    "-ss", String(start),
-                    "-i", sourceFilePath,
-                    "-t", String(segmentLength),
-                    "-c:v", "libx264",
-                    "-preset", "fast",
-                    "-crf", "22",
-                    "-maxrate", "6M",
-                    "-bufsize", "12M",
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    "-vf", "scale=min(1920\\,iw):-2",
-                    videoOut,
-                ],
-                { stdio: "pipe" }
-            );
-
-            execFileSync(
-                "ffmpeg",
-                ["-y", "-ss", String(start), "-i", sourceFilePath, "-strict", "unofficial", "-frames:v", "1", firstOut],
-                { stdio: "pipe" }
-            );
-
-            execFileSync(
-                "ffmpeg",
-                ["-y", "-ss", String(mid), "-i", sourceFilePath, "-strict", "unofficial", "-frames:v", "1", midOut],
-                { stdio: "pipe" }
-            );
-
-            results.push({
-                tempKey,
-                videoPath: videoOut,
-                firstThumbPath: firstOut,
-                midThumbPath: midOut,
-                tempVideoName,
-                tempFirstThumbName,
-                tempMiddleThumbName,
-                title: baseTitle,
-                duration: segmentLength,
-                startTime: start,
-                endTime: end,
+                duration: range.duration,
+                startTime: range.start,
+                endTime: range.end,
                 seriesNr: segNr,
                 seriesTotal: totalSegments,
                 tags: uniqueTags,
             });
-
-            segNr++;
         }
 
         return results;

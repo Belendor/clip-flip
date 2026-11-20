@@ -150,6 +150,47 @@ function getVideoDuration(filePath: string): number {
   }
 }
 
+interface SegmentRange {
+  start: number;
+  end: number;
+  duration: number;
+}
+
+function calculateSegmentRanges(duration: number, maxSegments = 10): SegmentRange[] {
+  if (duration <= 5.05 && duration >= 1.95) {
+    return [{ start: 0, end: duration, duration }];
+  }
+  if (duration > 5.05 && duration < 6.0) {
+    const half = parseFloat((duration / 2).toFixed(2));
+    return [
+      { start: 0, end: half, duration: half },
+      { start: half, end: duration, duration: parseFloat((duration - half).toFixed(2)) },
+    ];
+  }
+  const segmentLength = 4;
+  const ranges: SegmentRange[] = [];
+  let start = 0;
+  while (start < duration && ranges.length < maxSegments) {
+    const remaining = duration - start;
+    if (remaining < 1.95) {
+      if (ranges.length > 0 && (ranges[ranges.length - 1].duration + remaining) <= 5.05) {
+        const last = ranges[ranges.length - 1];
+        last.end = duration;
+        last.duration = parseFloat((last.end - last.start).toFixed(2));
+      }
+      break;
+    }
+    if (remaining <= 5.05) {
+      ranges.push({ start, end: duration, duration: parseFloat(remaining.toFixed(2)) });
+      break;
+    }
+    const end = start + segmentLength;
+    ranges.push({ start, end, duration: segmentLength });
+    start = end;
+  }
+  return ranges;
+}
+
 // ============================================================================
 // SHARED BUSINESS LOGIC: Moves temp files to final paths & updates Database
 // ============================================================================
@@ -948,24 +989,30 @@ app.post(
       for (const file of files) {
         const duration = getVideoDuration(file.path);
 
-        // If file itself is already a short clip (2s to 5s)
-        if (duration <= 5.05 && duration >= 1.95) {
+        const ranges = calculateSegmentRanges(duration, 10);
+        const totalSegments = ranges.length;
+
+        for (let idx = 0; idx < ranges.length; idx++) {
+          const range = ranges[idx];
+          const segNr = idx + 1;
+          const mid = ((range.start + range.end) / 2).toFixed(2);
+
           const tempKey = crypto.randomUUID();
           const tempVideoName = `${tempKey}.mp4`;
           const tempFirstThumbName = `${tempKey}_first.jpg`;
           const tempMiddleThumbName = `${tempKey}_middle.jpg`;
+
           const videoOut = path.join(tempBaseDir, tempVideoName);
           const firstOut = path.join(tempThumbDir, tempFirstThumbName);
           const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
-          const mid = (duration / 2).toFixed(2);
 
           execFileSync(
             "ffmpeg",
             [
               "-y",
-              "-ss", "0",
+              "-ss", String(range.start),
               "-i", file.path,
-              "-t", String(duration),
+              "-t", String(range.duration),
               "-c:v", "libx264",
               "-preset", "medium",
               "-crf", "22",
@@ -979,102 +1026,49 @@ app.post(
             { stdio: "pipe" }
           );
 
-          execFileSync("ffmpeg", ["-y", "-ss", "0", "-i", file.path, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
-          execFileSync("ffmpeg", ["-y", "-ss", String(mid), "-i", file.path, "-strict", "unofficial", "-frames:v", "1", middleOut], { stdio: "pipe" });
+          execFileSync(
+            "ffmpeg",
+            [
+              "-y",
+              "-ss", String(range.start),
+              "-i", file.path,
+              "-strict", "unofficial",
+              "-frames:v", "1",
+              firstOut,
+            ],
+            { stdio: "pipe" }
+          );
+
+          execFileSync(
+            "ffmpeg",
+            [
+              "-y",
+              "-ss", String(mid),
+              "-i", file.path,
+              "-strict", "unofficial",
+              "-frames:v", "1",
+              middleOut,
+            ],
+            { stdio: "pipe" }
+          );
+
+          if (!fsSync.existsSync(videoOut)) {
+            throw new Error(`FFmpeg ran but segment file was not created: ${videoOut}`);
+          }
 
           const videoTitle = title && String(title).trim() ? `${String(title).trim()},${file.originalname}` : file.originalname;
+
           processedSegments.push({
             tempKey,
             tempVideoName,
             tempFirstThumbName,
             tempMiddleThumbName,
             title: videoTitle,
-            seriesNr: 1,
-            seriesTotal: 1,
-            startTime: 0,
-            endTime: duration,
+            seriesNr: segNr,
+            seriesTotal: totalSegments,
+            startTime: range.start,
+            endTime: range.end,
           });
-        } else {
-          // Slice longer videos into segments
-          const totalSegments = Math.max(1, Math.floor(duration / segmentLength));
-          let segNr = 1;
-          for (let start = 0; start + segmentLength <= duration; start += segmentLength) {
-            const end = start + segmentLength;
-            const mid = ((start + end) / 2).toFixed(2);
-
-            const tempKey = crypto.randomUUID();
-            const tempVideoName = `${tempKey}.mp4`;
-            const tempFirstThumbName = `${tempKey}_first.jpg`;
-            const tempMiddleThumbName = `${tempKey}_middle.jpg`;
-
-            const videoOut = path.join(tempBaseDir, tempVideoName);
-            const firstOut = path.join(tempThumbDir, tempFirstThumbName);
-            const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
-
-            execFileSync(
-              "ffmpeg",
-              [
-                "-y",
-                "-ss", String(start),
-                "-i", file.path,
-                "-t", String(segmentLength),
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "22",
-                "-maxrate", "6M",
-                "-bufsize", "12M",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-vf", "scale=min(1920\\,iw):-2",
-                videoOut,
-              ],
-              { stdio: "pipe" }
-            );
-
-            execFileSync(
-              "ffmpeg",
-              [
-                "-y",
-                "-ss", String(start),
-                "-i", file.path,
-                "-strict", "unofficial",
-                "-frames:v", "1",
-                firstOut,
-              ],
-              { stdio: "pipe" }
-            );
-
-            execFileSync(
-              "ffmpeg",
-              [
-                "-y",
-                "-ss", String(mid),
-                "-i", file.path,
-                "-strict", "unofficial",
-                "-frames:v", "1",
-                middleOut,
-              ],
-              { stdio: "pipe" }
-            );
-
-            if (!fsSync.existsSync(videoOut)) {
-              throw new Error(`FFmpeg ran but segment file was not created: ${videoOut}`);
-            }
-
-            const videoTitle = title && String(title).trim() ? `${String(title).trim()},${file.originalname}` : file.originalname;
-
-            processedSegments.push({
-              tempKey,
-              tempVideoName,
-              tempFirstThumbName,
-              tempMiddleThumbName,
-              title: videoTitle,
-              seriesNr: segNr++,
-              seriesTotal: totalSegments,
-              startTime: start,
-              endTime: end,
-            });
-          }
         }
 
         if (fsSync.existsSync(file.path)) {
@@ -1460,8 +1454,14 @@ app.post("/upload-url", async (req: Request, res: Response) => {
         continue;
       }
 
-      // Case 1: Already a short clip (2s to 5.05s)
-      if (duration <= 5.05 && duration >= 1.95) {
+      const ranges = calculateSegmentRanges(duration, Number(maxSegments) || 10);
+      const totalSegments = ranges.length;
+
+      for (let idx = 0; idx < ranges.length; idx++) {
+        const range = ranges[idx];
+        const segNr = idx + 1;
+        const mid = ((range.start + range.end) / 2).toFixed(2);
+
         const tempKey = crypto.randomUUID();
         const tempVideoName = `${tempKey}.mp4`;
         const tempFirstThumbName = `${tempKey}_first.jpg`;
@@ -1470,7 +1470,6 @@ app.post("/upload-url", async (req: Request, res: Response) => {
         const videoOut = path.join(tempBaseDir, tempVideoName);
         const firstOut = path.join(tempThumbDir, tempFirstThumbName);
         const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
-        const mid = (duration / 2).toFixed(2);
 
         tempFilesToClean.push(videoOut, firstOut, middleOut);
 
@@ -1478,9 +1477,9 @@ app.post("/upload-url", async (req: Request, res: Response) => {
           "ffmpeg",
           [
             "-y",
-            "-ss", "0",
+            "-ss", String(range.start),
             "-i", rawTempPath,
-            "-t", String(duration),
+            "-t", String(range.duration),
             "-c:v", "libx264",
             "-preset", "fast",
             "-crf", "22",
@@ -1494,7 +1493,7 @@ app.post("/upload-url", async (req: Request, res: Response) => {
           { stdio: "pipe" }
         );
 
-        execFileSync("ffmpeg", ["-y", "-ss", "0", "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
+        execFileSync("ffmpeg", ["-y", "-ss", String(range.start), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
         execFileSync("ffmpeg", ["-y", "-ss", String(mid), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", middleOut], { stdio: "pipe" });
 
         processedSegments.push({
@@ -1504,70 +1503,11 @@ app.post("/upload-url", async (req: Request, res: Response) => {
           tempMiddleThumbName,
           title: baseTitle,
           model: uploader,
-          seriesNr: 1,
-          seriesTotal: 1,
-          startTime: 0,
-          endTime: duration,
+          seriesNr: segNr,
+          seriesTotal: totalSegments,
+          startTime: range.start,
+          endTime: range.end,
         });
-      } else {
-        // Case 2: Uncut / long video -> Slice into 4-second segments
-        const totalSegments = Math.min(
-          Math.max(1, Math.floor(duration / segmentLength)),
-          Number(maxSegments) || 10
-        );
-
-        let segNr = 1;
-        for (let start = 0; start + segmentLength <= duration && segNr <= totalSegments; start += segmentLength) {
-          const end = start + segmentLength;
-          const mid = ((start + end) / 2).toFixed(2);
-
-          const tempKey = crypto.randomUUID();
-          const tempVideoName = `${tempKey}.mp4`;
-          const tempFirstThumbName = `${tempKey}_first.jpg`;
-          const tempMiddleThumbName = `${tempKey}_middle.jpg`;
-
-          const videoOut = path.join(tempBaseDir, tempVideoName);
-          const firstOut = path.join(tempThumbDir, tempFirstThumbName);
-          const middleOut = path.join(tempThumbDir, tempMiddleThumbName);
-
-          tempFilesToClean.push(videoOut, firstOut, middleOut);
-
-          execFileSync(
-            "ffmpeg",
-            [
-              "-y",
-              "-ss", String(start),
-              "-i", rawTempPath,
-              "-t", String(segmentLength),
-              "-c:v", "libx264",
-              "-preset", "fast",
-              "-crf", "22",
-              "-maxrate", "6M",
-              "-bufsize", "12M",
-              "-c:a", "aac",
-              "-b:a", "128k",
-              "-vf", "scale=min(1920\\,iw):-2",
-              videoOut,
-            ],
-            { stdio: "pipe" }
-          );
-
-          execFileSync("ffmpeg", ["-y", "-ss", String(start), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", firstOut], { stdio: "pipe" });
-          execFileSync("ffmpeg", ["-y", "-ss", String(mid), "-i", rawTempPath, "-strict", "unofficial", "-frames:v", "1", middleOut], { stdio: "pipe" });
-
-          processedSegments.push({
-            tempKey,
-            tempVideoName,
-            tempFirstThumbName,
-            tempMiddleThumbName,
-            title: baseTitle,
-            model: uploader,
-            seriesNr: segNr++,
-            seriesTotal: totalSegments,
-            startTime: start,
-            endTime: end,
-          });
-        }
       }
 
       // Immediately delete the raw downloaded video
