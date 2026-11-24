@@ -1185,10 +1185,12 @@ class Players {
         }
 
         const modelBar = this.html.metadata.modelBars[section];
+        const modelDivider = this.html.metadata.modelDividers[section];
         if (modelBar) {
             modelBar.innerHTML = "";
             if (safeModels.length > 0) {
                 modelBar.classList.remove("hidden");
+                modelDivider?.classList.remove("hidden");
                 for (const model of safeModels) {
                     if (!model.name) continue;
                     const isModelActive = this.state.state === "model" && this.state.activeModel?.toLowerCase() === model.name.toLowerCase();
@@ -1237,6 +1239,7 @@ class Players {
                 }
             } else {
                 modelBar.classList.add("hidden");
+                modelDivider?.classList.add("hidden");
             }
         }
 

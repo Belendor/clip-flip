@@ -16,6 +16,7 @@ export default class Metadata {
     metaDataTabs: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     metaDataInputs: { [key: number]: HTMLDivElement[] | null } = { 1: [], 2: [], 3: [], 4: [] };
     modelBars: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    modelDividers: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     modelSelects: { [key: number]: HTMLSelectElement | null } = { 1: null, 2: null, 3: null, 4: null };
     onOpenModelPage?: (modelName: string) => void;
     uploadFormWrapper: HTMLDivElement | null = null;
@@ -759,6 +760,11 @@ export default class Metadata {
         const modelBar = this.html.createDiv(`video-models-${section}`, "metadata-model-bar hidden");
         this.modelBars[section] = modelBar;
 
+        const modelDivider = document.createElement("div");
+        modelDivider.id = `model-divider-${section}`;
+        modelDivider.className = "metadata-divider hidden";
+        this.modelDividers[section] = modelDivider;
+
         if (this.state.state === "new") {
             const middleRow = document.createElement("div");
             middleRow.className = "metadata-middle-row";
@@ -785,7 +791,7 @@ export default class Metadata {
             const divider2 = document.createElement("div");
             divider2.className = "metadata-divider";
 
-            videoTagsContainer.append(middleRow, divider2, modelBar, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider2, modelBar, modelDivider, videoTagsWrapper);
         } else {
             editToggleBtn.classList.remove("hidden");
 
@@ -808,7 +814,7 @@ export default class Metadata {
             const divider2 = document.createElement("div");
             divider2.className = "metadata-divider";
 
-            videoTagsContainer.append(middleRow, divider2, modelBar, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider2, modelBar, modelDivider, videoTagsWrapper);
         }
 
         const suggestedBox = document.createElement("div");

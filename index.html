@@ -22,7 +22,7 @@
     <noscript>
         <link rel="stylesheet" href="/dist/output.css">
     </noscript>
-    <script src="/dist/bundle.js?v=9" defer></script>
+    <script src="/dist/bundle.js?v=10" defer></script>
     <meta name="twitter:card" content="player">
     <meta name="twitter:title" content="ClipFlip - Nonstop Video Clips | Watch by Tags Instantly">
     <meta name="twitter:player:width" content="1280">
@@ -130,7 +130,8 @@
             position: absolute;
             left: 14px;
             bottom: max(96px, env(safe-area-inset-bottom, 0px) + 80px);
-            width: clamp(260px, 26vw, 360px);
+            width: clamp(182px, 22vw, 360px);
+            min-width: 182px;
             max-width: 90vw;
             max-height: min(60vh, 460px);
             overflow-y: auto;
@@ -231,7 +232,8 @@
 
         @media (max-width: 768px) {
             .metadata-form {
-                width: min(84vw, 290px);
+                width: clamp(182px, 84vw, 290px);
+                min-width: 182px;
                 max-height: min(48vh, 340px);
                 padding: 8px 10px;
                 bottom: max(88px, env(safe-area-inset-bottom, 0px) + 72px);
@@ -486,7 +488,8 @@
 
         @media (max-width: 768px) {
             .metadata-form {
-                width: min(82vw, 290px);
+                width: clamp(182px, 82vw, 290px);
+                min-width: 182px;
                 max-height: min(48vh, 340px);
                 padding: 6px 8px;
                 bottom: max(88px, env(safe-area-inset-bottom, 0px) + 72px);
