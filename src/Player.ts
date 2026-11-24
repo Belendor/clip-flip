@@ -621,6 +621,22 @@ class Players {
         }
 
         document.addEventListener('keydown', (e) => {
+            const target = e.target as HTMLElement | null;
+            const active = document.activeElement as HTMLElement | null;
+            const isEditing = (el: HTMLElement | null) =>
+                Boolean(
+                    el &&
+                    (el.tagName === 'INPUT' ||
+                     el.tagName === 'TEXTAREA' ||
+                     el.tagName === 'SELECT' ||
+                     el.isContentEditable ||
+                     el.closest('input, textarea, select, [contenteditable="true"]'))
+                );
+
+            if (isEditing(target) || isEditing(active)) {
+                return;
+            }
+
             if (e.key === 'ArrowLeft') navLeft?.click();
             else if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); navCenter?.click(); }
             else if (e.key === 'ArrowRight') navRight?.click();
