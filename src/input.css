@@ -2094,23 +2094,29 @@ body {
     width: 100%;
 }
 
+.metadata-model-page-action-btn,
 .metadata-model-add-btn {
-    padding: 6px 10px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 6px 12px;
+    background: rgba(14, 165, 233, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
     border-radius: 8px;
-    color: #e2e8f0;
+    color: #7dd3fc;
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
+.metadata-model-page-action-btn:hover,
 .metadata-model-add-btn:hover {
-    background: rgba(56, 189, 248, 0.2);
+    background: rgba(14, 165, 233, 0.3);
     border-color: #38bdf8;
     color: #ffffff;
+    transform: translateY(-1px);
 }
 
 /* ── Video Player & Slots ────────────────────────────────── */

@@ -669,29 +669,21 @@ export default class Metadata {
 
         this.modelSelects[section] = modelSelect;
 
-        const addModelBtn = document.createElement("button");
-        addModelBtn.type = "button";
-        addModelBtn.className = "metadata-model-add-btn";
-        addModelBtn.textContent = "+ New";
-        addModelBtn.title = "Add a new model to list";
-        addModelBtn.addEventListener("click", async () => {
-            const name = prompt("Enter new model name:");
-            if (!name || !name.trim()) return;
-            const cleanName = name.trim();
-            const source = prompt("Enter external source / website link (optional):") || undefined;
-            try {
-                const saved = await this.api.saveModel({ name: cleanName, source: source ? source.trim() : null });
-                if (!this.state.allModels.some((m) => m.name.toLowerCase() === cleanName.toLowerCase())) {
-                    this.state.allModels.push(saved);
-                    this.state.allModels.sort((a, b) => a.name.localeCompare(b.name));
-                }
-                this.populateModelSelects(cleanName);
-            } catch (err) {
-                alert("Failed to save new model: " + (err instanceof Error ? err.message : "Error"));
+        const goToModelPageBtn = document.createElement("button");
+        goToModelPageBtn.type = "button";
+        goToModelPageBtn.className = "metadata-model-page-action-btn";
+        goToModelPageBtn.innerHTML = `⊞ Page ↗`;
+        goToModelPageBtn.title = "Go to model page";
+        goToModelPageBtn.addEventListener("click", () => {
+            const selectedModel = modelSelect.value;
+            if (!selectedModel || !selectedModel.trim()) {
+                alert("Please select a model from the list first.");
+                return;
             }
+            this.onOpenModelPage?.(selectedModel.trim());
         });
 
-        modelEditWrap.append(modelSelect, addModelBtn);
+        modelEditWrap.append(modelSelect, goToModelPageBtn);
         modelRow.append(modelLabel, modelEditWrap);
 
         const sourceRow = makeInput("Source", "External link / source URL (optional)", "source");
