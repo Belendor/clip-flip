@@ -1202,11 +1202,79 @@ class Players {
                     modelBtn.className = "metadata-model-btn";
                     modelBtn.innerHTML = `👤 <span>${model.name}</span>`;
                     modelBtn.title = isModelActive ? "Model filter active (click to reset)" : `Filter and play all videos of ${model.name}`;
+                    let isHandlingClick = false;
                     modelBtn.addEventListener("click", async () => {
-                        if (isModelActive) {
-                            await this.switchMode("random");
-                        } else {
-                            await this.switchMode("model", model.name);
+                        if (isHandlingClick) return;
+                        isHandlingClick = true;
+                        try {
+                            const isCurrentlyActive = this.state.state === "model" && this.state.activeModel?.toLowerCase() === model.name.toLowerCase();
+                            if (isCurrentlyActive) {
+                                // Turn filter OFF without reloading current video
+                                this.state.state = "random";
+                                this.state.activeModel = null;
+                                this.state.randomized = true;
+                                try { localStorage.setItem("clipflip_mode", "random"); } catch (_) {}
+                                group.classList.remove("active");
+                                modelBtn.title = `Filter and play all videos of ${model.name}`;
+
+                                const metaTab = this.html.metadata.metaDataTabs[section];
+                                if (metaTab) {
+                                    metaTab.querySelectorAll(".metadata-tab").forEach(t => {
+                                        if ((t as HTMLElement).dataset.mode === "random") t.classList.add("active");
+                                        else t.classList.remove("active");
+                                    });
+                                }
+
+                                const [frontIdx, backIdx] = this.getSectionPlayerIndexes(section);
+                                const activeIdx = this.state.active[frontIdx] ? frontIdx : backIdx;
+                                const queuedIdx = activeIdx === frontIdx ? backIdx : frontIdx;
+                                const queuedPlayer = this.html.videoPlayers[queuedIdx];
+                                const nextId = this.state.computeNextVideoId(video.id, section);
+                                if (nextId) {
+                                    this.queuePlayer(queuedPlayer, nextId);
+                                }
+                                return;
+                            }
+
+                            // Turn filter ON:
+                            const isCurrentVideoOfModel = safeModels.some(
+                                (m) => (m.name || "").trim().toLowerCase() === model.name.trim().toLowerCase()
+                            );
+
+                            if (isCurrentVideoOfModel) {
+                                // Video already belongs to this model: DO NOT reload playback surface!
+                                modelBar.querySelectorAll(".metadata-model-group").forEach((g) => g.classList.remove("active"));
+                                group.classList.add("active");
+                                modelBtn.title = "Model filter active (click to reset)";
+
+                                const metaTab = this.html.metadata.metaDataTabs[section];
+                                if (metaTab) {
+                                    metaTab.querySelectorAll(".metadata-tab").forEach(t => t.classList.remove("active"));
+                                }
+
+                                this.state.state = "model";
+                                this.state.activeModel = model.name;
+                                this.state.randomized = false;
+                                this.state.positions[section] = video.id;
+
+                                // Fetch model clips in background to prime the sequence
+                                await this.state.fetchModelVideos(model.name);
+                                this.state.positions[section] = video.id;
+
+                                // Pre-queue next model clip in the inactive player
+                                const [frontIdx, backIdx] = this.getSectionPlayerIndexes(section);
+                                const activeIdx = this.state.active[frontIdx] ? frontIdx : backIdx;
+                                const queuedIdx = activeIdx === frontIdx ? backIdx : frontIdx;
+                                const queuedPlayer = this.html.videoPlayers[queuedIdx];
+                                const nextModelVideoId = this.state.computeNextVideoId(video.id, section);
+                                if (nextModelVideoId && nextModelVideoId !== 0) {
+                                    this.queuePlayer(queuedPlayer, nextModelVideoId);
+                                }
+                            } else {
+                                await this.switchMode("model", model.name);
+                            }
+                        } finally {
+                            isHandlingClick = false;
                         }
                     });
 
