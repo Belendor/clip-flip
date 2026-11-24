@@ -89,11 +89,15 @@ class Players {
         const hasCache = await this.state.cacheInitPromise;
 
         if (hasUrlId) {
+            const urlId = parseInt(urlIdRaw!, 10);
             this.state.state = "random";
             this.state.randomized = false;
+            this.state.positions = { 1: urlId, 2: urlId, 3: urlId, 4: urlId };
             this.html.metadata.init();
             this.attachMetadataTabListeners();
             await this.state.taggedVideosPromise;
+            this.state.positions = { 1: urlId, 2: urlId, 3: urlId, 4: urlId };
+            this.state.randomized = false;
             await this.loadVideos(false);
             return;
         }
@@ -539,6 +543,14 @@ class Players {
                 this.state.playing[nextIndex] = true;
                 this.updatePlayPauseIcon(true);
                 currentPlayer.pause();
+
+                if (!this.state.randomized && typeof window !== "undefined" && window.history?.replaceState) {
+                    const currentUrl = new URL(window.location.href);
+                    if (currentUrl.searchParams.has("id")) {
+                        currentUrl.searchParams.set("id", String(prevVideoId));
+                        window.history.replaceState(null, "", currentUrl.toString());
+                    }
+                }
 
                 this.getVideoMetadata(prevVideoId)
                     .then((meta) => this.populateMetadataForm(section, meta))
@@ -1069,6 +1081,14 @@ class Players {
             currentPlayer.pause();
 
             this.state.recordPlayedVideo(nextVideoId, section);
+
+            if (!this.state.randomized && typeof window !== "undefined" && window.history?.replaceState) {
+                const currentUrl = new URL(window.location.href);
+                if (currentUrl.searchParams.has("id")) {
+                    currentUrl.searchParams.set("id", String(nextVideoId));
+                    window.history.replaceState(null, "", currentUrl.toString());
+                }
+            }
 
             this.getVideoMetadata(nextVideoId)
                 .then((nextMetadata) => this.populateMetadataForm(section, nextMetadata))
@@ -1652,6 +1672,14 @@ class Players {
         if ((this.state.state === normalizedMode && normalizedMode !== "model") || this.isSwitchingMode) return;
         if (this.state.state === "model" && normalizedMode === "model" && this.state.activeModel === modelName && !startVideoId) return;
         this.isSwitchingMode = true;
+
+        if (typeof window !== "undefined" && window.history?.replaceState) {
+            const currentUrl = new URL(window.location.href);
+            if (currentUrl.searchParams.has("id")) {
+                currentUrl.searchParams.delete("id");
+                window.history.replaceState(null, "", currentUrl.pathname + (currentUrl.search || ""));
+            }
+        }
 
         this.showLoader(
             normalizedMode === "trending"

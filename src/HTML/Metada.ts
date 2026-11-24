@@ -580,7 +580,7 @@ export default class Metadata {
         const createTab = (mode: "random" | "trending" | "lowest" | "liked" | "new", label: string) => {
             const tab = document.createElement("button");
             tab.type = "button";
-            tab.className = `metadata-tab${this.state.state === mode ? " active" : ""}`;
+            tab.className = `metadata-tab${this.state.state === mode && (mode !== "random" || this.state.randomized) ? " active" : ""}`;
             tab.dataset.mode = mode;
             tab.textContent = label;
             return tab;

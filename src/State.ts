@@ -118,7 +118,7 @@ class State {
                 const cleanVideos = cachedVideos.filter(v => !this.isBlacklisted(v));
                 const unwatched = cleanVideos.filter(v => !this.played.has(v.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatched;
-                this.allVideos = unwatched;
+                this.allVideos = [...cleanVideos].sort((a, b) => a.id - b.id);
 
                 // Prepare trending videos (highest rated first, natural ascending ID for ties)
                 const sorted = [...cleanVideos].sort((a: any, b: any) => {
@@ -533,8 +533,8 @@ class State {
         const cleanPool = (sectionPool || []).filter((v) => !this.isBlacklisted(v));
 
         if (cleanPool.length > 0) {
-            // In random mode (or when randomized flag is true), pick a true random video with repeat prevention
-            if (this.state === "random" || this.randomized) {
+            // In random mode (when randomized flag is true), pick a true random video with repeat prevention
+            if (this.randomized) {
                 // Candidates excluding the currently playing video
                 let unplayed = cleanPool.filter((v) => !this.played.has(v.id) && v.id !== currentId);
 
@@ -573,13 +573,23 @@ class State {
                 return cleanPool[0]?.id ?? 0;
             }
 
-            // Sequential fallback when randomized is explicitly false
-            const videoIds = cleanPool.map((video) => video.id);
-            const currentIndex = videoIds.indexOf(currentId);
-            if (currentIndex >= 0 && currentIndex + 1 < videoIds.length) {
-                return videoIds[currentIndex + 1];
+            // Sequential forward playback when randomized is false (e.g. ?id= URL parameter)
+            const poolToUse = (this.allVideos && this.allVideos.length > 0) ? this.allVideos : cleanPool;
+            const sortedVideos = [...poolToUse].filter((v) => !this.isBlacklisted(v)).sort((a, b) => a.id - b.id);
+            const videoIds = sortedVideos.map((video) => video.id);
+
+            // Find next video with ID strictly greater than currentId
+            const nextVideoId = videoIds.find((id) => id > currentId);
+            if (nextVideoId != null) {
+                return nextVideoId;
             }
-            return videoIds[0] ?? 0;
+
+            // If reached the end of all videos, wrap around to the first video
+            return videoIds[0] ?? (currentId + 1);
+        }
+
+        if (!this.randomized && currentId > 0) {
+            return currentId + 1;
         }
 
         return 0;
@@ -665,7 +675,7 @@ class State {
                 const cleanVideos = videos.filter((v) => !this.isBlacklisted(v));
                 const unwatchedVideos = cleanVideos.filter((video) => !this.played.has(video.id)).sort((a, b) => a.id - b.id);
                 this.taggedVideos = unwatchedVideos;
-                this.allVideos = unwatchedVideos;
+                this.allVideos = [...cleanVideos].sort((a, b) => a.id - b.id);
 
                 const sorted = [...cleanVideos].sort((a: any, b: any) => {
                     const likesA = a.likes ?? 0;
@@ -697,7 +707,7 @@ class State {
                         return;
                     }
 
-                    const initialVideo = (this.randomized || this.state === "random")
+                    const initialVideo = this.randomized
                         ? candidates[Math.floor(Math.random() * candidates.length)]
                         : candidates[0];
 
