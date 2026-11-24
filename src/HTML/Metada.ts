@@ -18,6 +18,7 @@ export default class Metadata {
     modelBars: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     modelDividers: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     modelSelects: { [key: number]: HTMLSelectElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    modelEditContainers: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     onOpenModelPage?: (modelName: string) => void;
     uploadFormWrapper: HTMLDivElement | null = null;
     uploadTagSelect: HTMLSelectElement | null = null;
@@ -638,26 +639,19 @@ export default class Metadata {
 
         const titleRow = makeInput("Title", "Video title", "title");
 
-        // Model Select from list (User: "You can select only models from the list edit")
+        // Models field row supporting multiple model chips and addition
         const modelRow = document.createElement("div");
-        modelRow.className = "metadata-field-row";
+        modelRow.className = "metadata-field-row metadata-models-field-row";
         const modelLabel = document.createElement("label");
         modelLabel.className = "metadata-field-label";
-        modelLabel.textContent = "Model";
+        modelLabel.textContent = "Models";
 
-        const modelSelect = document.createElement("select");
-        modelSelect.name = "models";
-        modelSelect.dataset.key = "models";
-        modelSelect.className = "input-fields metadata-edit-input metadata-model-select";
+        const modelEditContainer = document.createElement("div");
+        modelEditContainer.id = `metadata-models-edit-${section}`;
+        modelEditContainer.className = "metadata-models-edit-wrapper";
+        this.modelEditContainers[section] = modelEditContainer;
 
-        const noneOption = document.createElement("option");
-        noneOption.value = "";
-        noneOption.textContent = "— None / No Model —";
-        modelSelect.appendChild(noneOption);
-
-        this.modelSelects[section] = modelSelect;
-
-        modelRow.append(modelLabel, modelSelect);
+        modelRow.append(modelLabel, modelEditContainer);
 
         const sourceRow = makeInput("Source", "External link / source URL (optional)", "source");
         const studioRow = makeInput("Studio", "Studio name", "studio");
@@ -668,38 +662,100 @@ export default class Metadata {
         return fieldsWrapper;
     }
 
-    populateModelSelects(selectedModelName?: string) {
-        const sections: SectionId[] = [1, 2, 3, 4];
-        sections.forEach((s) => {
-            const select = this.modelSelects[s];
-            if (!select) return;
-            const currentVal = selectedModelName !== undefined ? selectedModelName : select.value;
-            select.innerHTML = "";
+    renderModelEdit(
+        section: SectionId,
+        models: { name: string }[],
+        onAddModel: (name: string) => void,
+        onRemoveModel: (name: string) => void
+    ) {
+        const container = this.modelEditContainers[section];
+        if (!container) return;
+        container.innerHTML = "";
 
-            const noneOption = document.createElement("option");
-            noneOption.value = "";
-            noneOption.textContent = "— None / No Model —";
-            select.appendChild(noneOption);
+        const chipsContainer = document.createElement("div");
+        chipsContainer.className = "metadata-model-chips";
 
-            let foundCurrent = false;
+        const safeModels = (models || []).filter((m) => m && m.name && m.name.trim().length > 0);
 
-            this.state.allModels.forEach((m) => {
-                if (!m.name) return;
-                const opt = document.createElement("option");
-                opt.value = m.name;
-                opt.textContent = m.videoCount != null ? `${m.name} (${m.videoCount})` : m.name;
-                if (currentVal && m.name.toLowerCase() === currentVal.toLowerCase()) {
-                    opt.selected = true;
-                    foundCurrent = true;
-                }
-                select.appendChild(opt);
+        if (safeModels.length === 0) {
+            const noModelsSpan = document.createElement("span");
+            noModelsSpan.className = "metadata-no-models-text";
+            noModelsSpan.textContent = "No models assigned";
+            chipsContainer.appendChild(noModelsSpan);
+        } else {
+            safeModels.forEach((m) => {
+                const chip = document.createElement("div");
+                chip.className = "metadata-model-chip";
+
+                const nameSpan = document.createElement("span");
+                nameSpan.textContent = `👤 ${m.name}`;
+
+                const removeBtn = document.createElement("button");
+                removeBtn.type = "button";
+                removeBtn.className = "metadata-model-chip-remove";
+                removeBtn.innerHTML = "&times;";
+                removeBtn.title = `Remove model ${m.name}`;
+                removeBtn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRemoveModel(m.name);
+                });
+
+                chip.append(nameSpan, removeBtn);
+                chipsContainer.appendChild(chip);
             });
+        }
 
-            if (!foundCurrent) {
-                noneOption.selected = true;
+        const addRow = document.createElement("div");
+        addRow.className = "metadata-model-add-row";
+
+        const select = document.createElement("select");
+        select.className = "input-fields metadata-edit-input metadata-model-select";
+        this.modelSelects[section] = select;
+
+        const defaultOpt = document.createElement("option");
+        defaultOpt.value = "";
+        defaultOpt.textContent = "+ Add Model...";
+        defaultOpt.selected = true;
+        select.appendChild(defaultOpt);
+
+        const customOpt = document.createElement("option");
+        customOpt.value = "__custom__";
+        customOpt.textContent = "+ Type new model name...";
+        select.appendChild(customOpt);
+
+        const existingNames = new Set(safeModels.map((m) => m.name.trim().toLowerCase()));
+
+        this.state.allModels.forEach((m) => {
+            if (!m.name || existingNames.has(m.name.trim().toLowerCase())) return;
+            const opt = document.createElement("option");
+            opt.value = m.name;
+            opt.textContent = m.videoCount != null ? `${m.name} (${m.videoCount})` : m.name;
+            select.appendChild(opt);
+        });
+
+        select.addEventListener("change", (e) => {
+            e.preventDefault();
+            const val = select.value;
+            if (!val) return;
+            if (val === "__custom__") {
                 select.value = "";
+                const customName = prompt("Enter model name to add to this clip:");
+                if (customName && customName.trim().length > 0) {
+                    onAddModel(customName.trim());
+                }
+            } else {
+                select.value = "";
+                onAddModel(val);
             }
         });
+
+        addRow.appendChild(select);
+        container.append(chipsContainer, addRow);
+    }
+
+    populateModelSelects(_selectedModelName?: string) {
+        // Compatibility no-op
     }
 
     async populateUploadTagSelect() {

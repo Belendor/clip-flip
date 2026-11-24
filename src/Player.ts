@@ -505,19 +505,6 @@ class Players {
                     if (key && key !== "id") await this.updateMeta(section, key, value);
                 });
             });
-
-            const modelSelect = this.html.metadata.modelSelects[section];
-            if (modelSelect) {
-                modelSelect.addEventListener("change", async (event) => {
-                    event.preventDefault();
-                    const target = event.target as HTMLSelectElement;
-                    const val = target.value;
-                    const updated = await this.updateMeta(section, "models", val ? [val] : []);
-                    if (updated) {
-                        await this.populateMetadataForm(section, updated);
-                    }
-                });
-            }
         });
     }
 
@@ -1177,12 +1164,30 @@ class Players {
             }
         });
 
-        const modelSelect = this.html.metadata.modelSelects[section];
-        if (modelSelect) {
-            const primaryModel = safeModels[0]?.name || "";
-            this.html.metadata.populateModelSelects(primaryModel);
-            modelSelect.value = primaryModel;
-        }
+        this.html.metadata.renderModelEdit(
+            section,
+            safeModels,
+            async (modelName: string) => {
+                const currentNames = safeModels.map((m) => m.name).filter(Boolean);
+                if (!currentNames.some((n) => n.toLowerCase() === modelName.toLowerCase())) {
+                    currentNames.push(modelName);
+                    const updated = await this.updateMeta(section, "models", currentNames);
+                    await this.state.fetchAllModels();
+                    if (updated) {
+                        await this.populateMetadataForm(section, updated);
+                    }
+                }
+            },
+            async (modelName: string) => {
+                const currentNames = safeModels.map((m) => m.name).filter(Boolean);
+                const filtered = currentNames.filter((n) => n.toLowerCase() !== modelName.toLowerCase());
+                const updated = await this.updateMeta(section, "models", filtered);
+                await this.state.fetchAllModels();
+                if (updated) {
+                    await this.populateMetadataForm(section, updated);
+                }
+            }
+        );
 
         const modelBar = this.html.metadata.modelBars[section];
         const modelDivider = this.html.metadata.modelDividers[section];

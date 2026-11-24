@@ -22,7 +22,7 @@
     <noscript>
         <link rel="stylesheet" href="/dist/output.css">
     </noscript>
-    <script src="/dist/bundle.js?v=12" defer></script>
+    <script src="/dist/bundle.js?v=13" defer></script>
     <meta name="twitter:card" content="player">
     <meta name="twitter:title" content="ClipFlip - Nonstop Video Clips | Watch by Tags Instantly">
     <meta name="twitter:player:width" content="1280">
@@ -407,6 +407,91 @@
             background: transparent !important;
             color: #ffffff;
             transform: scale(1.2);
+        }
+
+        .metadata-models-field-row {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 4px !important;
+        }
+
+        .metadata-models-edit-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .metadata-model-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            align-items: center;
+            width: 100%;
+        }
+
+        .metadata-model-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 2px 7px;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            border-radius: 999px;
+            color: #bae6fd;
+            font-size: 0.72rem;
+            font-weight: 500;
+        }
+
+        .metadata-model-chip-remove {
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1;
+            padding: 0 1px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s, transform 0.15s;
+        }
+
+        .metadata-model-chip-remove:hover {
+            color: #f87171;
+            transform: scale(1.2);
+        }
+
+        .metadata-no-models-text {
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.4);
+            font-style: italic;
+            padding: 2px 0;
+        }
+
+        .metadata-model-add-row {
+            width: 100%;
+        }
+
+        .metadata-model-select {
+            width: 100%;
+            padding: 5px 8px;
+            background: rgba(12, 16, 24, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 0.75rem;
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        .metadata-model-select:focus {
+            border-color: #38bdf8;
+        }
+
+        .metadata-model-select option {
+            background: #0d121d;
+            color: #ffffff;
         }
 
         .favorite-btn {
