@@ -5,6 +5,7 @@ import VideoApi from "./VideoApi";
 import type { Tag, Video, VideoWithRelations, UpdateVideoPayload, NewVideo } from "./types";
 import User from "./User";
 import { isNsfwAccepted, showNsfwModal } from "./NsfwModal";
+import ModelPage from "./ModelPage";
 
 type SectionSwapState = Record<SectionId, boolean>;
 
@@ -14,6 +15,7 @@ class Players {
     private readonly pendingSuggestedTags = new Map<SectionId, Set<string>>();
     private readonly lastPopulatedVideoId = new Map<SectionId, number>();
     private isSwitchingMode = false;
+    private modelPage?: ModelPage;
 
     private loadRevision = 0;
     private sectionLoadRevision: Record<SectionId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -57,6 +59,7 @@ class Players {
     }
 
     async init() {
+        this.html.metadata.onOpenModelPage = (name) => this.openModelPage(name);
         this.attachEventListeners();
         this.updateUploadButtonState();
         this.attachMetadataTabListeners();
@@ -470,8 +473,12 @@ class Players {
                 metaTab.onclick = async (e) => {
                     const targetBtn = (e.target as HTMLElement)?.closest<HTMLButtonElement>(".metadata-tab");
                     if (!targetBtn) return;
-                    const mode = targetBtn.dataset.mode as "random" | "trending" | "lowest" | "liked" | "new" | "favorite";
+                    const mode = targetBtn.dataset.mode as "random" | "trending" | "lowest" | "liked" | "new" | "favorite" | "model";
                     if (!mode) return;
+                    if (mode === "model") {
+                        await this.switchMode("random");
+                        return;
+                    }
                     if (mode === "liked" && !this.user.currentUser) {
                         this.user.promptLogin("Please sign in to view your liked videos");
                         return;
@@ -497,6 +504,19 @@ class Players {
                     if (key && key !== "id") await this.updateMeta(section, key, value);
                 });
             });
+
+            const modelSelect = this.html.metadata.modelSelects[section];
+            if (modelSelect) {
+                modelSelect.addEventListener("change", async (event) => {
+                    event.preventDefault();
+                    const target = event.target as HTMLSelectElement;
+                    const val = target.value;
+                    const updated = await this.updateMeta(section, "models", val ? [val] : []);
+                    if (updated) {
+                        await this.populateMetadataForm(section, updated);
+                    }
+                });
+            }
         });
     }
 
@@ -1147,12 +1167,75 @@ class Players {
                 case "id": input.value = String(video.id); break;
                 case "Title":
                 case "title": input.value = video.title ?? ""; break;
-                case "Models":
-                case "models": input.value = safeModels.map((model) => model.name ?? "").filter(Boolean).join(", "); break;
                 case "Studio":
                 case "studio": input.value = video.studio ?? ""; break;
+                case "Source":
+                case "source": input.value = video.source ?? (safeModels[0]?.source || ""); break;
             }
         });
+
+        const modelSelect = this.html.metadata.modelSelects[section];
+        if (modelSelect) {
+            const primaryModel = safeModels[0]?.name || "";
+            this.html.metadata.populateModelSelects(primaryModel);
+            modelSelect.value = primaryModel;
+        }
+
+        const modelBar = this.html.metadata.modelBars[section];
+        if (modelBar) {
+            modelBar.innerHTML = "";
+            if (safeModels.length > 0) {
+                modelBar.classList.remove("hidden");
+                for (const model of safeModels) {
+                    if (!model.name) continue;
+                    const isModelActive = this.state.state === "model" && this.state.activeModel?.toLowerCase() === model.name.toLowerCase();
+                    const group = document.createElement("div");
+                    group.className = `metadata-model-group${isModelActive ? " active" : ""}`;
+
+                    const modelBtn = document.createElement("button");
+                    modelBtn.type = "button";
+                    modelBtn.className = "metadata-model-btn";
+                    modelBtn.innerHTML = `👤 <span>${model.name}</span>`;
+                    modelBtn.title = isModelActive ? "Model filter active (click to reset)" : `Filter and play all videos of ${model.name}`;
+                    modelBtn.addEventListener("click", async () => {
+                        if (isModelActive) {
+                            await this.switchMode("random");
+                        } else {
+                            await this.switchMode("model", model.name);
+                        }
+                    });
+
+                    const pageBtn = document.createElement("button");
+                    pageBtn.type = "button";
+                    pageBtn.className = "metadata-model-page-btn";
+                    pageBtn.innerHTML = `⊞ Page`;
+                    pageBtn.title = `View all clips of ${model.name} in grid`;
+                    pageBtn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        this.openModelPage(model.name);
+                    });
+
+                    group.append(modelBtn, pageBtn);
+                    modelBar.appendChild(group);
+
+                    // Source link
+                    const rawSource = video.source || model.source;
+                    const fallbackSource = `https://www.redgifs.com/users/${encodeURIComponent(model.name.trim().toLowerCase().replace(/\s+/g, ''))}`;
+                    const sourceUrl = (rawSource && rawSource.trim().length > 0) ? rawSource.trim() : fallbackSource;
+
+                    const sourceLink = document.createElement("a");
+                    sourceLink.className = "metadata-source-link";
+                    sourceLink.href = sourceUrl;
+                    sourceLink.target = "_blank";
+                    sourceLink.rel = "noopener noreferrer";
+                    sourceLink.title = `Source external website: ${sourceUrl}`;
+                    sourceLink.innerHTML = `<span>Source ↗</span>`;
+                    modelBar.appendChild(sourceLink);
+                }
+            } else {
+                modelBar.classList.add("hidden");
+            }
+        }
 
         const handleNextClip = () => {
             if (this.state.active[0]) this.handlePlayerEnded(0 as PlayerIndex);
@@ -1456,6 +1539,7 @@ class Players {
         if (key === "title") payload.title = value;
         else if (key === "models") payload.models = value;
         else if (key === "studio") payload.studio = value;
+        else if (key === "source") payload.source = typeof value === "string" ? value : value[0];
         else if (key === "tag") payload.tag = { id: tagId, title: value };
 
         try {
@@ -1474,9 +1558,22 @@ class Players {
         }
     }
 
-    public async switchMode(mode: "random" | "trending" | "lowest" | "liked" | "new" | "favorite") {
+    public setModelPage(page: ModelPage) {
+        this.modelPage = page;
+    }
+
+    public openModelPage(modelName: string) {
+        this.modelPage?.open(modelName);
+    }
+
+    public async switchMode(
+        mode: "random" | "trending" | "lowest" | "liked" | "new" | "favorite" | "model",
+        modelName?: string,
+        startVideoId?: number
+    ) {
         const normalizedMode = mode === "favorite" ? "liked" : mode;
-        if (this.state.state === normalizedMode || this.isSwitchingMode) return;
+        if ((this.state.state === normalizedMode && normalizedMode !== "model") || this.isSwitchingMode) return;
+        if (this.state.state === "model" && normalizedMode === "model" && this.state.activeModel === modelName && !startVideoId) return;
         this.isSwitchingMode = true;
 
         this.showLoader(
@@ -1488,20 +1585,25 @@ class Players {
                 ? "Loading liked videos..."
                 : normalizedMode === "new"
                 ? "Loading new clips..."
+                : normalizedMode === "model"
+                ? `Loading ${modelName || "model"} clips...`
                 : "Loading videos..."
         );
 
         this.state.resetHistory();
         this.state.state = normalizedMode;
-        try {
-            localStorage.setItem("clipflip_mode", normalizedMode);
-        } catch (_) {}
+        if (normalizedMode !== "model") {
+            try {
+                localStorage.setItem("clipflip_mode", normalizedMode);
+            } catch (_) {}
+        }
         this.metadataCache.clear();
         this.resetPlaybackSurface();
 
         try {
             switch (normalizedMode) {
                 case "random":
+                    this.state.activeModel = null;
                     this.state.randomized = true;
                     this.state.endIndex = config.defaultEndIndex;
                     const pool = this.state.taggedVideos && this.state.taggedVideos.length > 0 ? this.state.taggedVideos : null;
@@ -1511,20 +1613,37 @@ class Players {
                     this.state.positions = { 1: randomStartId, 2: randomStartId, 3: randomStartId, 4: randomStartId };
                     break;
                 case "lowest":
+                    this.state.activeModel = null;
                     this.state.randomized = false;
                     await this.state.fetchLowestVideos();
                     break;
                 case "trending":
+                    this.state.activeModel = null;
                     this.state.randomized = false;
                     await this.state.fetchTrendingVideos();
                     break;
                 case "liked":
+                    this.state.activeModel = null;
                     this.state.randomized = false;
                     await this.state.fetchLikedVideos(this.user.getId());
                     break;
                 case "new":
+                    this.state.activeModel = null;
                     this.state.randomized = false;
                     await this.state.fetchNewVideos();
+                    break;
+                case "model":
+                    this.state.randomized = false;
+                    const targetModel = modelName || this.state.activeModel || "";
+                    await this.state.fetchModelVideos(targetModel);
+                    if (startVideoId) {
+                        this.state.positions = {
+                            1: startVideoId,
+                            2: startVideoId,
+                            3: startVideoId,
+                            4: startVideoId,
+                        };
+                    }
                     break;
             }
             this.html.init();

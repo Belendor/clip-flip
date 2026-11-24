@@ -1,11 +1,11 @@
 import { config } from "./config";
 import VideoApi from "./VideoApi";
-import type { NewVideo, Tag, Video, VideoWithRelations } from "./types";
+import type { Model, NewVideo, Tag, Video, VideoWithRelations } from "./types";
 import { dbCache } from "./cache";
 
 export type SectionId = 1 | 2 | 3 | 4;
 export type PlayerIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
-type PlayerState = "random" | "trending" | "lowest" | "liked" | "favorite" | "new";
+type PlayerState = "random" | "trending" | "lowest" | "liked" | "favorite" | "new" | "model";
 
 type PositionsMap = Record<SectionId, number>;
 
@@ -39,6 +39,10 @@ class State {
     lowestVideos: Video[] | null = null;
     newVideos: NewVideo[] | null = null;
     likedVideos: Video[] | null = null;
+    activeModel: string | null = null;
+    modelVideos: Video[] | null = null;
+    allModels: Model[] = [];
+    modelsPromise: Promise<void> | undefined;
     taggedVideosPromise: Promise<void> | undefined;
     advancedMode = false;
     active = {
@@ -90,6 +94,7 @@ class State {
             this.resetActiveTags();
         }
         this.tagsPromise = this.fetchAllTags();
+        this.modelsPromise = this.fetchAllModels();
         this.taggedVideosPromise = this.queryTags();
         this.loadHistory();
     }
@@ -98,6 +103,10 @@ class State {
         try {
             const cachedVideos = await dbCache.get<Video[]>("cached_all_videos");
             const cachedTags = await dbCache.get<Tag[]>("cached_all_tags");
+            const cachedModels = await dbCache.get<Model[]>("cached_all_models");
+            if (cachedModels && cachedModels.length > 0) {
+                this.allModels = cachedModels;
+            }
             if (cachedTags && cachedTags.length > 0) {
                 this.tags = cachedTags;
                 this.allTags = [...cachedTags].sort((a, b) =>
@@ -500,6 +509,17 @@ class State {
             return 0;
         }
 
+        // Model mode (iterate stored modelVideos array in sequence)
+        if (this.state === "model") {
+            if (this.modelVideos != null && this.modelVideos.length > 0) {
+                const videoIds = this.modelVideos.map((v) => v.id);
+                const currentIndex = videoIds.indexOf(currentId);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % videoIds.length : 0;
+                return videoIds[nextIndex];
+            }
+            return 0;
+        }
+
         // Tagged / DB videos for this specific section
         const sectionTags = this.activeTags.get(section);
         const hasSectionTags = !!sectionTags && sectionTags.length > 0;
@@ -884,6 +904,74 @@ class State {
                 this.tags = [];
                 this.allTags = [];
             }
+        }
+    }
+
+    async fetchAllModels(): Promise<void> {
+        try {
+            const models = await this.api.fetchModels();
+            if (models && models.length > 0) {
+                void dbCache.set("cached_all_models", models);
+                this.allModels = [...models].sort((a, b) =>
+                    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+                );
+                console.log("Fetched all models:", this.allModels.length);
+            }
+        } catch (error) {
+            console.error("Failed to fetch models:", error);
+            if (!this.allModels || this.allModels.length === 0) {
+                this.allModels = [];
+            }
+        }
+    }
+
+    async fetchModelVideos(modelName: string): Promise<void> {
+        console.log("Fetching videos for model:", modelName);
+        this.clearEmptyState();
+        this.activeModel = modelName;
+        this.state = "model";
+        this.randomized = false;
+        try {
+            let matchingVideos: Video[] = [];
+            if (this.allVideos && this.allVideos.length > 0) {
+                matchingVideos = this.allVideos.filter((v: any) =>
+                    Array.isArray(v.models) && v.models.some((m: any) =>
+                        (m.name || "").trim().toLowerCase() === modelName.trim().toLowerCase()
+                    )
+                );
+            }
+
+            if (matchingVideos.length > 0) {
+                this.modelVideos = matchingVideos;
+            } else {
+                const details = await this.api.fetchModelDetails(modelName);
+                if (details && Array.isArray(details.videos)) {
+                    this.modelVideos = details.videos;
+                } else {
+                    const fallback = await this.api.fetchVideos(`?model=${encodeURIComponent(modelName)}`);
+                    this.modelVideos = fallback || [];
+                }
+            }
+
+            // Sort sequentially by seriesNr or id so clips play in sequence
+            this.modelVideos.sort((a: any, b: any) => {
+                if (a.seriesNr != null && b.seriesNr != null && a.seriesNr !== b.seriesNr) {
+                    return a.seriesNr - b.seriesNr;
+                }
+                return a.id - b.id;
+            });
+
+            const firstId = this.modelVideos[0]?.id || 0;
+            this.positions = {
+                1: firstId,
+                2: firstId,
+                3: firstId,
+                4: firstId,
+            };
+        } catch (error) {
+            console.error("Failed to fetch model videos:", error);
+            this.modelVideos = [];
+            this.positions = { 1: 0, 2: 0, 3: 0, 4: 0 };
         }
     }
 

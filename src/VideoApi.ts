@@ -1,4 +1,4 @@
-import type { Tag, Video, VideoWithRelations, UpdateVideoPayload, NewVideo } from "./types";
+import type { Tag, Model, Video, VideoWithRelations, UpdateVideoPayload, NewVideo } from "./types";
 import { config } from './config';
 
 export default class VideoApi {
@@ -17,6 +17,29 @@ export default class VideoApi {
         return this.request<Tag[]>(`/tags${query}`, {
             method: "GET",
             headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    async fetchModels(search?: string): Promise<Model[]> {
+        const query = search ? `?search=${encodeURIComponent(search)}` : "";
+        return this.request<Model[]>(`/models${query}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    async fetchModelDetails(name: string): Promise<{ id: number; name: string; alias?: string | null; source?: string | null; videoCount: number; videos: VideoWithRelations[] }> {
+        return this.request(`/models/${encodeURIComponent(name)}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    async saveModel(data: { name: string; source?: string | null; alias?: string | null }): Promise<Model> {
+        return this.request<Model>(`/models`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
         });
     }
 

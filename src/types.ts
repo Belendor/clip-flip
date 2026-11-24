@@ -6,7 +6,10 @@ export interface Tag {
 
 export interface Model {
     id?: number;
-    name?: string;
+    name: string;
+    alias?: string | null;
+    source?: string | null;
+    videoCount?: number;
 }
 
 export type ReactionType = "like" | "dislike";
@@ -15,6 +18,7 @@ export interface Video {
     id: number;
     title?: string | null;
     studio?: string | null;
+    source?: string | null;
     seriesNr?: number | null;
     seriesTotal?: number | null;
     reactions?: { userId: number; count: number }[];
@@ -33,6 +37,7 @@ export interface UpdateVideoPayload {
     title?: string | string[];
     models?: string | string[];
     studio?: string | string[];
+    source?: string;
     tag?: {
         id?: number;
         title: string | string[];

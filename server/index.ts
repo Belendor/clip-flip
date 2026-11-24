@@ -240,7 +240,7 @@ async function processSegmentBatch(segments: SegmentItem[], tagId?: number | str
 
 app.post('/videos', async (req: Request, res: Response) => {
   try {
-    const { id, studio, title, models, tag } = req.body;
+    const { id, studio, title, models, source, tag } = req.body;
 
     const videoId = Number(id);
     if (!videoId || isNaN(videoId)) {
@@ -260,15 +260,28 @@ app.post('/videos', async (req: Request, res: Response) => {
       updateData.studio = studio;
     }
 
-    if (models !== undefined) {
-      const modelNames = Array.isArray(models) ? models : [models];
-      const connectOrCreateModels = modelNames.map((name: string) => ({
-        where: { name },
-        create: { name }
-      }));
+    if (source !== undefined) {
+      const cleanSource = source ? String(source).trim() : null;
+      createData.source = cleanSource;
+      updateData.source = cleanSource;
+    }
 
-      createData.models = { connectOrCreate: connectOrCreateModels };
-      updateData.models = { connectOrCreate: connectOrCreateModels };
+    if (models !== undefined) {
+      const rawNames = Array.isArray(models) ? models : [models];
+      const modelNames = rawNames
+        .map((m: any) => typeof m === "string" ? m.trim() : (m?.name || "").trim())
+        .filter((name: string) => name && name.length > 0);
+
+      if (modelNames.length === 0) {
+        updateData.models = { set: [] };
+      } else {
+        const connectOrCreateModels = modelNames.map((name: string) => ({
+          where: { name },
+          create: { name }
+        }));
+        createData.models = { connectOrCreate: connectOrCreateModels };
+        updateData.models = { set: [], connectOrCreate: connectOrCreateModels };
+      }
     }
 
     if (tag) {
@@ -533,6 +546,7 @@ app.get("/seo-tags/:tag", async (req: Request, res: Response) => {
 app.get("/videos", async (req: Request, res: Response) => {
   const search = req.query.search?.toString() || "";
   const sort = req.query.sort?.toString() || "";
+  const modelQuery = req.query.model?.toString()?.trim() || "";
   const rawUserId = req.cookies.userId || req.headers["x-user-id"];
   const userId = Number(rawUserId);
 
@@ -545,6 +559,13 @@ app.get("/videos", async (req: Request, res: Response) => {
   }
 
   const whereClause: any = {};
+  if (modelQuery) {
+    whereClause.models = {
+      some: {
+        name: { equals: modelQuery },
+      },
+    };
+  }
   if (search) {
     whereClause.OR = [
       { title: { contains: search } },
@@ -697,6 +718,138 @@ app.get('/tags', async (req, res) => {
   } catch (error) {
     console.error('Error fetching tags:', error);
     res.status(500).json({ error: 'Failed to fetch tags' });
+  }
+});
+
+app.get('/models', async (req: Request, res: Response) => {
+  try {
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+    const models = await prisma.model.findMany({
+      where: search ? { name: { contains: search } } : undefined,
+      orderBy: { name: 'asc' },
+      include: {
+        _count: {
+          select: { videos: true },
+        },
+      },
+    });
+
+    const result = models
+      .map((model) => ({
+        id: model.id,
+        name: model.name.trim(),
+        alias: model.alias,
+        source: model.source || `https://www.redgifs.com/users/${encodeURIComponent(model.name.trim().toLowerCase().replace(/\s+/g, ''))}`,
+        videoCount: model._count.videos,
+      }))
+      .filter((m) => m.name.length > 0);
+
+    // Deduplicate by lowercase name if any duplicates exist in DB
+    const seen = new Map<string, typeof result[0]>();
+    for (const m of result) {
+      const lower = m.name.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.set(lower, m);
+      } else {
+        const existing = seen.get(lower)!;
+        existing.videoCount = (existing.videoCount || 0) + (m.videoCount || 0);
+        if (m.source && !existing.source) existing.source = m.source;
+      }
+    }
+
+    res.status(200).json(Array.from(seen.values()));
+  } catch (error) {
+    console.error('Error fetching models:', error);
+    res.status(500).json({ error: 'Failed to fetch models' });
+  }
+});
+
+app.get('/models/:name', async (req: Request, res: Response) => {
+  try {
+    const rawName = decodeURIComponent(req.params.name).trim();
+    const rawUserId = req.cookies.userId || req.headers["x-user-id"];
+    const userId = Number(rawUserId);
+
+    const model = await prisma.model.findFirst({
+      where: {
+        name: { equals: rawName },
+      },
+      include: {
+        videos: {
+          include: {
+            tags: true,
+            models: true,
+            reactions: {
+              select: {
+                userId: true,
+                type: true,
+              },
+            },
+          },
+          orderBy: { id: "asc" },
+        },
+      },
+    });
+
+    if (!model) {
+      return res.status(404).json({ error: "Model not found" });
+    }
+
+    const mappedVideos = model.videos.map((video) => {
+      const likes = video.reactions.filter((r) => r.type === "like").length;
+      const dislikes = video.reactions.filter((r) => r.type === "dislike").length;
+      const myReaction = userId
+        ? video.reactions.find((r) => r.userId === userId)?.type ?? null
+        : null;
+
+      return {
+        ...video,
+        likes,
+        dislikes,
+        myReaction,
+        reactions: video.reactions,
+      };
+    });
+
+    const sequenceOrderedVideos = sortVideosPreservingSequence(mappedVideos);
+
+    res.json({
+      id: model.id,
+      name: model.name.trim(),
+      alias: model.alias,
+      source: model.source || `https://www.redgifs.com/users/${encodeURIComponent(model.name.trim().toLowerCase().replace(/\s+/g, ''))}`,
+      videoCount: sequenceOrderedVideos.length,
+      videos: sequenceOrderedVideos,
+    });
+  } catch (error) {
+    console.error('Error fetching model by name:', error);
+    res.status(500).json({ error: 'Failed to fetch model' });
+  }
+});
+
+app.post('/models', async (req: Request, res: Response) => {
+  try {
+    const { name, source, alias } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Model name is required' });
+    }
+    const cleanName = name.trim();
+    const model = await prisma.model.upsert({
+      where: { name: cleanName },
+      update: {
+        source: source !== undefined ? (source ? String(source).trim() : null) : undefined,
+        alias: alias !== undefined ? (alias ? String(alias).trim() : null) : undefined,
+      },
+      create: {
+        name: cleanName,
+        source: source ? String(source).trim() : null,
+        alias: alias ? String(alias).trim() : null,
+      },
+    });
+    res.json(model);
+  } catch (error) {
+    console.error('Error saving model:', error);
+    res.status(500).json({ error: 'Failed to save model' });
   }
 });
 

@@ -13,6 +13,7 @@ model Video {
   seriesNr    Int?
   seriesTotal Int?
   studio      String?
+  source      String?
   startTime   Float?
   endTime     Float?
 
@@ -30,6 +31,7 @@ model NewVideo {
   seriesNr    Int?
   seriesTotal Int?
   studio      String?
+  source      String?
 
   startTime   Float
   endTime     Float
@@ -64,6 +66,7 @@ model Model {
   id        Int        @id @default(autoincrement())
   name      String     @unique
   alias     String?
+  source    String?
   videos    Video[]    @relation("VideoModels")
   newVideos NewVideo[] @relation("NewVideoModels")
 }

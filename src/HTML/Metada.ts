@@ -15,6 +15,9 @@ export default class Metadata {
     metaVisible: { [key: number]: boolean | null } = { 1: null, 2: null, 3: null, 4: null };
     metaDataTabs: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
     metaDataInputs: { [key: number]: HTMLDivElement[] | null } = { 1: [], 2: [], 3: [], 4: [] };
+    modelBars: { [key: number]: HTMLDivElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    modelSelects: { [key: number]: HTMLSelectElement | null } = { 1: null, 2: null, 3: null, 4: null };
+    onOpenModelPage?: (modelName: string) => void;
     uploadFormWrapper: HTMLDivElement | null = null;
     uploadTagSelect: HTMLSelectElement | null = null;
     private uploadToolbarButton: HTMLButtonElement | null = null;
@@ -603,6 +606,16 @@ export default class Metadata {
             tabsContainer.append(tabNew);
         }
 
+        // If in "model" mode, show the active model tab!
+        if (this.state.state === "model" && this.state.activeModel) {
+            const tabModel = document.createElement("button");
+            tabModel.type = "button";
+            tabModel.className = "metadata-tab active";
+            tabModel.dataset.mode = "model";
+            tabModel.innerHTML = `<span>👤 ${this.state.activeModel}</span>`;
+            tabsContainer.append(tabModel);
+        }
+
         this.metaDataTabs[section] = tabsContainer;
         return tabsContainer;
     }
@@ -633,13 +646,98 @@ export default class Metadata {
         };
 
         const titleRow = makeInput("Title", "Video title", "title");
-        const modelRow = makeInput("Models", "Models (comma-separated)", "models");
+
+        // Model Select from list (User: "You can select only models from the list edit")
+        const modelRow = document.createElement("div");
+        modelRow.className = "metadata-field-row";
+        const modelLabel = document.createElement("label");
+        modelLabel.className = "metadata-field-label";
+        modelLabel.textContent = "Model";
+
+        const modelEditWrap = document.createElement("div");
+        modelEditWrap.className = "metadata-model-edit-container";
+
+        const modelSelect = document.createElement("select");
+        modelSelect.name = "models";
+        modelSelect.dataset.key = "models";
+        modelSelect.className = "metadata-model-select";
+
+        const noneOption = document.createElement("option");
+        noneOption.value = "";
+        noneOption.textContent = "— None / No Model —";
+        modelSelect.appendChild(noneOption);
+
+        this.modelSelects[section] = modelSelect;
+
+        const addModelBtn = document.createElement("button");
+        addModelBtn.type = "button";
+        addModelBtn.className = "metadata-model-add-btn";
+        addModelBtn.textContent = "+ New";
+        addModelBtn.title = "Add a new model to list";
+        addModelBtn.addEventListener("click", async () => {
+            const name = prompt("Enter new model name:");
+            if (!name || !name.trim()) return;
+            const cleanName = name.trim();
+            const source = prompt("Enter external source / website link (optional):") || undefined;
+            try {
+                const saved = await this.api.saveModel({ name: cleanName, source: source ? source.trim() : null });
+                if (!this.state.allModels.some((m) => m.name.toLowerCase() === cleanName.toLowerCase())) {
+                    this.state.allModels.push(saved);
+                    this.state.allModels.sort((a, b) => a.name.localeCompare(b.name));
+                }
+                this.populateModelSelects(cleanName);
+            } catch (err) {
+                alert("Failed to save new model: " + (err instanceof Error ? err.message : "Error"));
+            }
+        });
+
+        modelEditWrap.append(modelSelect, addModelBtn);
+        modelRow.append(modelLabel, modelEditWrap);
+
+        const sourceRow = makeInput("Source", "External link / source URL (optional)", "source");
         const studioRow = makeInput("Studio", "Studio name", "studio");
         const idRow = makeInput("Video ID", "id", "id", true);
 
         const fieldsWrapper = this.html.createDiv(`metadata-fields-${section}`, "metadata-fields");
-        fieldsWrapper.append(titleRow, modelRow, studioRow, idRow);
+        fieldsWrapper.append(titleRow, modelRow, sourceRow, studioRow, idRow);
         return fieldsWrapper;
+    }
+
+    populateModelSelects(selectedModelName?: string) {
+        const sections: SectionId[] = [1, 2, 3, 4];
+        sections.forEach((s) => {
+            const select = this.modelSelects[s];
+            if (!select) return;
+            const currentVal = selectedModelName !== undefined ? selectedModelName : select.value;
+            select.innerHTML = "";
+
+            const noneOption = document.createElement("option");
+            noneOption.value = "";
+            noneOption.textContent = "— None / No Model —";
+            select.appendChild(noneOption);
+
+            let foundCurrent = !currentVal;
+
+            this.state.allModels.forEach((m) => {
+                if (!m.name) return;
+                const opt = document.createElement("option");
+                opt.value = m.name;
+                opt.textContent = m.videoCount != null ? `${m.name} (${m.videoCount})` : m.name;
+                if (currentVal && m.name.toLowerCase() === currentVal.toLowerCase()) {
+                    opt.selected = true;
+                    foundCurrent = true;
+                }
+                select.appendChild(opt);
+            });
+
+            if (currentVal && !foundCurrent) {
+                const customOpt = document.createElement("option");
+                customOpt.value = currentVal;
+                customOpt.textContent = currentVal;
+                customOpt.selected = true;
+                select.appendChild(customOpt);
+            }
+        });
     }
 
     async populateUploadTagSelect() {
@@ -697,6 +795,8 @@ export default class Metadata {
 
         const videoTagsContainer = this.html.createDiv(`video-tags-${section}`, "metadata-tags-panel");
         const videoTagsWrapper = this.html.createDiv(`video-tags-wrapper-${section}`, "tag-container metadata-tag-list");
+        const modelBar = this.html.createDiv(`video-models-${section}`, "metadata-model-bar hidden");
+        this.modelBars[section] = modelBar;
 
         if (this.state.state === "new") {
             const middleRow = document.createElement("div");
@@ -724,7 +824,7 @@ export default class Metadata {
             const divider2 = document.createElement("div");
             divider2.className = "metadata-divider";
 
-            videoTagsContainer.append(middleRow, divider2, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider2, modelBar, videoTagsWrapper);
         } else {
             editToggleBtn.classList.remove("hidden");
 
@@ -747,7 +847,7 @@ export default class Metadata {
             const divider2 = document.createElement("div");
             divider2.className = "metadata-divider";
 
-            videoTagsContainer.append(middleRow, divider2, videoTagsWrapper);
+            videoTagsContainer.append(middleRow, divider2, modelBar, videoTagsWrapper);
         }
 
         const suggestedBox = document.createElement("div");
