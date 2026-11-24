@@ -22,7 +22,7 @@
     <noscript>
         <link rel="stylesheet" href="/dist/output.css">
     </noscript>
-    <script src="/dist/bundle.js?v=11" defer></script>
+    <script src="/dist/bundle.js?v=12" defer></script>
     <meta name="twitter:card" content="player">
     <meta name="twitter:title" content="ClipFlip - Nonstop Video Clips | Watch by Tags Instantly">
     <meta name="twitter:player:width" content="1280">
@@ -126,6 +126,8 @@
         }
 
         .metadata-form {
+            container-type: inline-size;
+            container-name: metaform;
             z-index: 40;
             position: absolute;
             left: 14px;
@@ -277,7 +279,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
+            gap: 4px;
             margin-bottom: 3px;
         }
 
@@ -304,14 +306,23 @@
         }
 
         .metadata-tabs {
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 3px;
-            padding: 2px 3px;
+            gap: 1.5px;
+            padding: 1.5px 2px;
             background: rgba(0, 0, 0, 0.28);
             border: 1px solid rgba(255, 255, 255, 0.14);
             border-radius: 999px;
             backdrop-filter: blur(8px);
+            max-width: 100%;
+            min-width: 0;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .metadata-tabs::-webkit-scrollbar {
+            display: none;
         }
 
         .metadata-tab {
@@ -319,10 +330,13 @@
             border: none;
             background: transparent;
             color: rgba(255, 255, 255, 0.65);
-            padding: 3px 8px;
+            padding: 1.5px 3.5px;
             border-radius: 999px;
-            font-size: 11px;
+            font-size: 8px;
             font-weight: 500;
+            line-height: 1.25;
+            letter-spacing: -0.15px;
+            white-space: nowrap;
             cursor: pointer;
             transition: background 0.18s, color 0.18s;
         }
@@ -335,8 +349,41 @@
         .metadata-tab.active {
             background: rgba(255, 255, 255, 0.22);
             color: #ffffff;
-            font-weight: 700;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            font-weight: 600;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        @container metaform (min-width: 220px) {
+            .metadata-tabs {
+                gap: 2px;
+                padding: 2px;
+            }
+            .metadata-tab {
+                padding: 2px 4.5px;
+                font-size: 9px;
+            }
+        }
+
+        @container metaform (min-width: 260px) {
+            .metadata-tabs {
+                gap: 2.5px;
+                padding: 2px 3px;
+            }
+            .metadata-tab {
+                padding: 2.5px 6px;
+                font-size: 10px;
+            }
+        }
+
+        @container metaform (min-width: 310px) {
+            .metadata-tabs {
+                gap: 3px;
+                padding: 2px 3px;
+            }
+            .metadata-tab {
+                padding: 3px 8px;
+                font-size: 11px;
+            }
         }
 
         .metadata-close-btn {
@@ -345,13 +392,14 @@
             outline: none !important;
             box-shadow: none !important;
             color: rgba(255, 255, 255, 0.6);
-            font-size: 20px;
+            font-size: 16px;
             line-height: 1;
             cursor: pointer;
-            padding: 0 4px;
+            padding: 0 2px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            flex-shrink: 0;
             transition: color 0.15s ease, transform 0.15s ease;
         }
 
