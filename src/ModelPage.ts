@@ -194,6 +194,47 @@ export default class ModelPage {
                 return a.id - b.id;
             });
 
+            // Group clips by title
+            interface ModelVideoGroup {
+                key: string;
+                title: string;
+                videos: VideoWithRelations[];
+            }
+
+            const groups: ModelVideoGroup[] = [];
+            const groupMap = new Map<string, ModelVideoGroup>();
+
+            for (const v of videos) {
+                const trimmedTitle = (v.title || "").trim();
+                const groupKey = trimmedTitle ? `title:${trimmedTitle.toLowerCase()}` : `id:${v.id}`;
+
+                let group = groupMap.get(groupKey);
+                if (!group) {
+                    group = {
+                        key: groupKey,
+                        title: trimmedTitle || `Clip #${v.id}`,
+                        videos: [],
+                    };
+                    groupMap.set(groupKey, group);
+                    groups.push(group);
+                }
+                group.videos.push(v);
+            }
+
+            // Ensure videos inside each group are in sequential order
+            for (const g of groups) {
+                g.videos.sort((a: any, b: any) => {
+                    const sA = a.seriesNr ?? (a.startTime != null ? a.startTime : 0);
+                    const sB = b.seriesNr ?? (b.startTime != null ? b.startTime : 0);
+                    if (sA !== sB) return sA - sB;
+                    return a.id - b.id;
+                });
+            }
+
+            const badgeCountText = groups.length < videos.length
+                ? `${videos.length} Clips (${groups.length} Sets)`
+                : `${videos.length} ${videos.length === 1 ? "Clip" : "Clips"}`;
+
             // Build Header Card
             const initials = modelName.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
@@ -205,7 +246,7 @@ export default class ModelPage {
                     <div class="model-banner-info">
                         <div class="model-title-row">
                             <h2 class="model-name-title">${this.escapeHtml(modelName)}</h2>
-                            <span class="model-badge">${videos.length} ${videos.length === 1 ? "Clip" : "Clips"}</span>
+                            <span class="model-badge">${badgeCountText}</span>
                         </div>
                         <div class="model-banner-actions">
                             ${finalSourceUrl ? `
@@ -253,55 +294,156 @@ export default class ModelPage {
             }
 
             const gridContainer = scrollBody.querySelector("#model-clips-grid");
-            if (gridContainer && videos.length > 0) {
-                for (let i = 0; i < videos.length; i++) {
-                    const v = videos[i];
+            if (gridContainer && groups.length > 0) {
+                for (let i = 0; i < groups.length; i++) {
+                    const group = groups[i];
+                    const total = group.videos.length;
+                    const v0 = group.videos[0];
+
                     const card = document.createElement("div");
                     card.className = "model-video-card";
-                    card.dataset.videoId = String(v.id);
+                    card.dataset.videoId = String(v0.id);
 
-                    const seriesText = v.seriesNr != null && v.seriesTotal != null
-                        ? `Part ${v.seriesNr}/${v.seriesTotal}`
-                        : (v.seriesNr != null ? `Part ${v.seriesNr}` : `#${v.id}`);
+                    const initialTag = v0.tags && v0.tags.length > 0 ? v0.tags[0].title : "";
+                    const initialLikes = v0.likes ?? 0;
 
-                    const tagPill = v.tags && v.tags.length > 0 ? v.tags[0].title : "";
-                    const likesCount = v.likes ?? 0;
+                    const thumbUrl0 = `${config.videoThumbnailPath}${v0.id}.jpg`;
+                    const fallbackThumb0 = `${config.videoSourcePathNew}thumbnails/${v0.id}_first.jpg`;
 
-                    // Thumbnail URL
-                    const thumbUrl = `${config.videoThumbnailPath}${v.id}.jpg`;
-                    const fallbackThumb = `${config.videoSourcePathNew}thumbnails/${v.id}_first.jpg`;
+                    const seriesText = total > 1
+                        ? `<span class="badge-num">1</span><span class="badge-slash text-white/50">/</span><span class="badge-total">${total}</span>`
+                        : (v0.seriesNr != null
+                            ? (v0.seriesTotal != null ? `Part ${v0.seriesNr}/${v0.seriesTotal}` : `Part ${v0.seriesNr}`)
+                            : `#${v0.id}`);
+
+                    // Segment dots/bars for multi-clip groups
+                    const segmentsHtml = total > 1
+                        ? `<div class="model-card-segments">
+                            ${group.videos.map((_, idx) => `<span class="model-card-segment${idx === 0 ? " active" : ""}"></span>`).join("")}
+                           </div>`
+                        : "";
 
                     card.innerHTML = `
                         <div class="model-card-media">
-                            <img src="${thumbUrl}" alt="Clip ${v.id}" class="model-card-img" loading="lazy" />
+                            <img src="${thumbUrl0}" alt="${this.escapeHtml(group.title)}" class="model-card-img" loading="lazy" />
                             <div class="model-card-overlay">
                                 <span class="model-card-play-icon">▶</span>
                             </div>
-                            <span class="model-card-series-badge">${this.escapeHtml(seriesText)}</span>
+                            <span class="model-card-series-badge">${seriesText}</span>
+                            ${segmentsHtml}
                         </div>
                         <div class="model-card-footer">
                             <div class="model-card-info">
-                                ${tagPill ? `<span class="model-card-tag">#${this.escapeHtml(tagPill)}</span>` : `<span class="model-card-tag">#${v.id}</span>`}
-                                <span class="model-card-likes">♥ ${likesCount}</span>
+                                <span class="model-card-tag">${initialTag ? `#${this.escapeHtml(initialTag)}` : `#${v0.id}`}</span>
+                                <span class="model-card-likes">♥ ${initialLikes}</span>
                             </div>
-                            ${v.title ? `<div class="model-card-title truncate" title="${this.escapeHtml(v.title)}">${this.escapeHtml(v.title)}</div>` : ""}
+                            <div class="model-card-title truncate" title="${this.escapeHtml(group.title)}">${this.escapeHtml(group.title)}</div>
                         </div>
                     `;
 
-                    // Handle thumbnail load error
-                    const img = card.querySelector("img");
+                    const img = card.querySelector("img") as HTMLImageElement | null;
+                    const badgeNumEl = card.querySelector(".model-card-series-badge .badge-num") as HTMLElement | null;
+                    const tagEl = card.querySelector(".model-card-tag") as HTMLElement | null;
+                    const likesEl = card.querySelector(".model-card-likes") as HTMLElement | null;
+
+                    let currentIndex = 0;
+                    let hoverTimer: any = null;
+                    let preloaded = false;
+
+                    const preloadImages = () => {
+                        if (preloaded || total <= 1) return;
+                        preloaded = true;
+                        for (let k = 1; k < total; k++) {
+                            const pImg = new Image();
+                            pImg.src = `${config.videoThumbnailPath}${group.videos[k].id}.jpg`;
+                        }
+                    };
+
+                    const updateActiveIndex = (nextIndex: number) => {
+                        if (nextIndex === currentIndex || nextIndex < 0 || nextIndex >= total) return;
+                        currentIndex = nextIndex;
+                        const activeVideo = group.videos[currentIndex];
+                        card.dataset.videoId = String(activeVideo.id);
+
+                        if (img) {
+                            img.src = `${config.videoThumbnailPath}${activeVideo.id}.jpg`;
+                        }
+                        if (badgeNumEl) {
+                            badgeNumEl.textContent = String(currentIndex + 1);
+                        }
+                        if (likesEl) {
+                            likesEl.textContent = `♥ ${activeVideo.likes ?? 0}`;
+                        }
+                        if (tagEl) {
+                            const curTag = activeVideo.tags && activeVideo.tags.length > 0 ? activeVideo.tags[0].title : "";
+                            tagEl.textContent = curTag ? `#${curTag}` : `#${activeVideo.id}`;
+                        }
+
+                        const segments = card.querySelectorAll(".model-card-segment");
+                        segments.forEach((seg, sIdx) => {
+                            seg.classList.toggle("active", sIdx === currentIndex);
+                        });
+                    };
+
                     if (img) {
                         img.onerror = () => {
-                            if (img.src !== fallbackThumb) {
-                                img.src = fallbackThumb;
+                            const activeVideo = group.videos[currentIndex] || v0;
+                            const fallback = `${config.videoSourcePathNew}thumbnails/${activeVideo.id}_first.jpg`;
+                            if (img.src !== fallback) {
+                                img.src = fallback;
                             }
                         };
                     }
 
+                    if (total > 1) {
+                        const startCycle = () => {
+                            preloadImages();
+                            clearInterval(hoverTimer);
+                            hoverTimer = setInterval(() => {
+                                const next = (currentIndex + 1) % total;
+                                updateActiveIndex(next);
+                            }, 800);
+                        };
+
+                        const stopCycle = () => {
+                            clearInterval(hoverTimer);
+                            hoverTimer = null;
+                            updateActiveIndex(0);
+                        };
+
+                        card.addEventListener("mouseenter", () => {
+                            startCycle();
+                        });
+
+                        card.addEventListener("mouseleave", () => {
+                            stopCycle();
+                        });
+
+                        card.addEventListener("mousemove", (e) => {
+                            const rect = card.getBoundingClientRect();
+                            const x = e.clientX - rect.left;
+                            const ratio = Math.max(0, Math.min(0.999, x / rect.width));
+                            const targetIdx = Math.floor(ratio * total);
+                            if (targetIdx !== currentIndex) {
+                                updateActiveIndex(targetIdx);
+                                clearInterval(hoverTimer);
+                                hoverTimer = setInterval(() => {
+                                    const next = (currentIndex + 1) % total;
+                                    updateActiveIndex(next);
+                                }, 800);
+                            }
+                        });
+                    }
+
                     // On click: jump to player and play filtered in sequence!
                     card.addEventListener("click", () => {
+                        const activeVideo = group.videos[currentIndex] || v0;
+                        if (hoverTimer) {
+                            clearInterval(hoverTimer);
+                            hoverTimer = null;
+                        }
                         this.close();
-                        this.onPlayVideoCallback?.(modelName, v.id);
+                        this.onPlayVideoCallback?.(modelName, activeVideo.id);
                     });
 
                     gridContainer.appendChild(card);

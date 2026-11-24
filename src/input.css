@@ -1882,6 +1882,44 @@ body {
     font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+}
+
+.model-card-series-badge .badge-num {
+    color: #38bdf8;
+    font-weight: 700;
+}
+
+.model-card-series-badge .badge-total {
+    color: rgba(255, 255, 255, 0.65);
+    font-weight: 600;
+}
+
+.model-card-segments {
+    position: absolute;
+    bottom: 6px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    gap: 3px;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.model-card-segment {
+    flex: 1;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
+    transition: background 0.15s ease, height 0.15s ease;
+}
+
+.model-card-segment.active {
+    background: #38bdf8;
+    height: 3px;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
 }
 
 .model-card-footer {
