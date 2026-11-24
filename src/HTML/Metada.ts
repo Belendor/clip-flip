@@ -654,13 +654,10 @@ export default class Metadata {
         modelLabel.className = "metadata-field-label";
         modelLabel.textContent = "Model";
 
-        const modelEditWrap = document.createElement("div");
-        modelEditWrap.className = "metadata-model-edit-container";
-
         const modelSelect = document.createElement("select");
         modelSelect.name = "models";
         modelSelect.dataset.key = "models";
-        modelSelect.className = "metadata-model-select";
+        modelSelect.className = "input-fields metadata-edit-input metadata-model-select";
 
         const noneOption = document.createElement("option");
         noneOption.value = "";
@@ -669,22 +666,7 @@ export default class Metadata {
 
         this.modelSelects[section] = modelSelect;
 
-        const goToModelPageBtn = document.createElement("button");
-        goToModelPageBtn.type = "button";
-        goToModelPageBtn.className = "metadata-model-page-action-btn";
-        goToModelPageBtn.innerHTML = `⊞ Page ↗`;
-        goToModelPageBtn.title = "Go to model page";
-        goToModelPageBtn.addEventListener("click", () => {
-            const selectedModel = modelSelect.value;
-            if (!selectedModel || !selectedModel.trim()) {
-                alert("Please select a model from the list first.");
-                return;
-            }
-            this.onOpenModelPage?.(selectedModel.trim());
-        });
-
-        modelEditWrap.append(modelSelect, goToModelPageBtn);
-        modelRow.append(modelLabel, modelEditWrap);
+        modelRow.append(modelLabel, modelSelect);
 
         const sourceRow = makeInput("Source", "External link / source URL (optional)", "source");
         const studioRow = makeInput("Studio", "Studio name", "studio");
