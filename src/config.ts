@@ -18,7 +18,7 @@ const videoPath    = isLocal ? `${PROD_MEDIA_HOST}/video/` : "/video/";
 const videoPath1   = isLocal ? `${PROD_MEDIA_HOST}/video1/` : "/video1/";
 const videoPathNew = isLocal ? `${PROD_MEDIA_HOST}/video1/new/` : "/video1/new/";
 const thumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/thumbnails/` : "/thumbnails/";
-const videoThumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/thumbnail/videos/` : "/thumbnail/videos/";
+const videoThumbnailPath = isLocal ? `${PROD_MEDIA_HOST}/video/thumbnails/` : "/video/thumbnails/";
 
 export const config = {
     isLocal:             isLocal,
