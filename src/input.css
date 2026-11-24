@@ -2002,9 +2002,24 @@ body {
 }
 
 .metadata-model-group.active {
-    border-color: rgba(56, 189, 248, 0.8);
-    background: rgba(14, 165, 233, 0.2);
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.28);
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.45);
+}
+
+.metadata-model-group.active .metadata-model-btn {
+    color: #4ade80;
+    font-weight: 700;
+}
+
+.metadata-model-group.active .metadata-model-page-btn {
+    border-left-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+}
+
+.metadata-model-group.active .metadata-model-page-btn:hover {
+    background: rgba(34, 197, 94, 0.35);
+    color: #ffffff;
 }
 
 .metadata-model-btn {

@@ -606,16 +606,6 @@ export default class Metadata {
             tabsContainer.append(tabNew);
         }
 
-        // If in "model" mode, show the active model tab!
-        if (this.state.state === "model" && this.state.activeModel) {
-            const tabModel = document.createElement("button");
-            tabModel.type = "button";
-            tabModel.className = "metadata-tab active";
-            tabModel.dataset.mode = "model";
-            tabModel.innerHTML = `<span>👤 ${this.state.activeModel}</span>`;
-            tabsContainer.append(tabModel);
-        }
-
         this.metaDataTabs[section] = tabsContainer;
         return tabsContainer;
     }
