@@ -1159,8 +1159,6 @@ class Players {
                 case "title": input.value = video.title ?? ""; break;
                 case "Studio":
                 case "studio": input.value = video.studio ?? ""; break;
-                case "Source":
-                case "source": input.value = video.source ?? (safeModels[0]?.source || ""); break;
             }
         });
 

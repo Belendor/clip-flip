@@ -653,12 +653,11 @@ export default class Metadata {
 
         modelRow.append(modelLabel, modelEditContainer);
 
-        const sourceRow = makeInput("Source", "External link / source URL (optional)", "source");
         const studioRow = makeInput("Studio", "Studio name", "studio");
         const idRow = makeInput("Video ID", "id", "id", true);
 
         const fieldsWrapper = this.html.createDiv(`metadata-fields-${section}`, "metadata-fields");
-        fieldsWrapper.append(titleRow, modelRow, sourceRow, studioRow, idRow);
+        fieldsWrapper.append(titleRow, modelRow, studioRow, idRow);
         return fieldsWrapper;
     }
 
