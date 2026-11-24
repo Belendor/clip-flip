@@ -910,16 +910,15 @@ class State {
     async fetchAllModels(): Promise<void> {
         try {
             const models = await this.api.fetchModels();
-            if (models && models.length > 0) {
-                void dbCache.set("cached_all_models", models);
-                this.allModels = [...models].sort((a, b) =>
-                    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-                );
-                console.log("Fetched all models:", this.allModels.length);
-            }
+            const list = Array.isArray(models) ? models : [];
+            this.allModels = [...list].sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+            );
+            void dbCache.set("cached_all_models", this.allModels);
+            console.log("Fetched all models:", this.allModels.length);
         } catch (error) {
             console.error("Failed to fetch models:", error);
-            if (!this.allModels || this.allModels.length === 0) {
+            if (!this.allModels) {
                 this.allModels = [];
             }
         }

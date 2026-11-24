@@ -60,6 +60,7 @@ class Players {
 
     async init() {
         this.html.metadata.onOpenModelPage = (name) => this.openModelPage(name);
+        void this.state.modelsPromise?.then(() => this.html.metadata.populateModelSelects());
         this.attachEventListeners();
         this.updateUploadButtonState();
         this.attachMetadataTabListeners();
@@ -1123,7 +1124,9 @@ class Players {
         if (!video) return;
 
         const safeTags = Array.isArray(video.tags) ? video.tags : [];
-        const safeModels = Array.isArray(video.models) ? video.models : [];
+        const safeModels = (Array.isArray(video.models) ? video.models : []).filter(
+            (model) => model.name && this.state.allModels.some((m) => m.name.toLowerCase() === model.name.toLowerCase())
+        );
 
         const form = document.getElementById(`metaForm${section}`) as HTMLDivElement | null;
         if (!form) return;

@@ -716,7 +716,7 @@ export default class Metadata {
             noneOption.textContent = "— None / No Model —";
             select.appendChild(noneOption);
 
-            let foundCurrent = !currentVal;
+            let foundCurrent = false;
 
             this.state.allModels.forEach((m) => {
                 if (!m.name) return;
@@ -730,12 +730,9 @@ export default class Metadata {
                 select.appendChild(opt);
             });
 
-            if (currentVal && !foundCurrent) {
-                const customOpt = document.createElement("option");
-                customOpt.value = currentVal;
-                customOpt.textContent = currentVal;
-                customOpt.selected = true;
-                select.appendChild(customOpt);
+            if (!foundCurrent) {
+                noneOption.selected = true;
+                select.value = "";
             }
         });
     }
