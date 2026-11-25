@@ -328,23 +328,40 @@ class Players {
             return false;
         }
 
+        this.setSectionActivePlayer(section, frontIndex);
         await this.playPlayer(frontPlayer, frontIndex);
         if (revision !== this.sectionLoadRevision[section]) return false;
 
+        // Dismiss the loading overlay immediately once the first frame/chunk is ready and playback begins
+        this.hideLoader();
+
         this.state.recordPlayedVideo(currentVideoId, section);
 
-        const currentMetadata = await this.getVideoMetadata(currentVideoId, true);
-        if (revision !== this.sectionLoadRevision[section]) return false;
+        // Fetch metadata in the background without blocking the UI
+        void this.getVideoMetadata(currentVideoId, true).then((currentMetadata) => {
+            if (revision !== this.sectionLoadRevision[section]) return;
+            if (this.state.adminMode && currentMetadata?.reactions?.length) {
+                if (currentMetadata.reactions.length > 0) {
+                    void this.loadSection(section, revision);
+                    return;
+                }
+            }
+            this.populateMetadataForm(section, currentMetadata);
+        });
 
-        if (this.state.adminMode && currentMetadata?.reactions?.length) {
-            if (currentMetadata?.reactions?.length > 0) { return this.loadSection(section, revision); }
-        }
-        this.populateMetadataForm(section, currentMetadata);
+        // Preload next queued video in the background without holding up the visible player or loader
+        void this.preloadNextVideo(section, backPlayer, currentVideoId, revision);
 
+        return true;
+    }
+
+    private async preloadNextVideo(section: SectionId, backPlayer: HTMLVideoElement, currentVideoId: number, revision: number): Promise<void> {
         let nextVideoId = this.state.peekNextQueuedVideoId(currentVideoId, section);
         while (nextVideoId !== 0) {
+            if (revision !== this.sectionLoadRevision[section]) return;
             this.queuePlayer(backPlayer, nextVideoId);
             const nextReady = await this.waitForVideoReady(backPlayer);
+            if (revision !== this.sectionLoadRevision[section]) return;
             if (nextReady) break;
             console.warn(`Queued video ${nextVideoId} could not be loaded by link. Trying next...`);
             this.state.markVideoAsPlayed(nextVideoId);
@@ -354,9 +371,6 @@ class Players {
         if (nextVideoId === 0) {
             this.resetPlayer(backPlayer);
         }
-
-        this.setSectionActivePlayer(section, frontIndex);
-        return true;
     }
 
     private configurePlayer(player: HTMLVideoElement, videoId: number, preload: "metadata" | "auto") {
@@ -1188,6 +1202,16 @@ class Players {
                 this.state.playing[index as PlayerIndex] = true;
                 this.updatePlayPauseIcon(true);
             });
+            player.addEventListener("playing", () => {
+                if (this.state.active[index as PlayerIndex]) {
+                    this.hideLoader();
+                }
+            });
+            player.addEventListener("loadeddata", () => {
+                if (this.state.active[index as PlayerIndex]) {
+                    this.hideLoader();
+                }
+            });
             player.addEventListener("pause", () => {
                 this.state.playing[index as PlayerIndex] = false;
                 const anyActivePlaying = this.getVisibleActivePlayerIndexes()
@@ -1285,19 +1309,20 @@ class Players {
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return true;
 
         return new Promise<boolean>((resolve) => {
-            const timeout = window.setTimeout(() => { cleanup(false); }, 4000);
+            const timeout = window.setTimeout(() => { cleanup(false); }, 3500);
             const cleanup = (result: boolean) => {
                 window.clearTimeout(timeout);
                 video.removeEventListener("canplay", handleReady);
-                video.removeEventListener("loadeddata", handleLoadedData);
+                video.removeEventListener("loadeddata", handleReady);
+                video.removeEventListener("playing", handleReady);
                 video.removeEventListener("error", handleError);
                 resolve(result);
             };
             const handleReady = () => cleanup(true);
-            const handleLoadedData = async () => { if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) cleanup(true); };
             const handleError = () => cleanup(false);
             video.addEventListener("canplay", handleReady, { once: true });
-            video.addEventListener("loadeddata", handleLoadedData, { once: true });
+            video.addEventListener("loadeddata", handleReady, { once: true });
+            video.addEventListener("playing", handleReady, { once: true });
             video.addEventListener("error", handleError, { once: true });
         });
     }
