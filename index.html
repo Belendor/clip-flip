@@ -18,11 +18,11 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2">
     <title>ClipFlip - Nonstop Video Clips | Watch by Tags Instantly</title>
     <!-- Lazy-load full CSS -->
-    <link rel="preload" href="/dist/output.css?v=22" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/dist/output.css?v=24" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/dist/output.css?v=22">
+        <link rel="stylesheet" href="/dist/output.css?v=24">
     </noscript>
-    <script src="/dist/bundle.js?v=23" defer></script>
+    <script src="/dist/bundle.js?v=24" defer></script>
     <meta name="twitter:card" content="player">
     <meta name="twitter:title" content="ClipFlip - Nonstop Video Clips | Watch by Tags Instantly">
     <meta name="twitter:player:width" content="1280">
@@ -189,31 +189,42 @@
             display: flex !important;
             flex-wrap: wrap !important;
             align-items: center !important;
-            gap: 4px !important;
+            gap: 6px !important;
             padding: 0 !important;
             margin: 0 !important;
         }
 
         .metadata-form.compact-multisection .compact-tag-list .tag-button {
-            font-size: 0.72rem !important;
-            font-weight: 500 !important;
-            padding: 3px 8px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 0.78rem !important;
+            font-weight: 600 !important;
+            padding: 4px 13px !important;
             height: auto !important;
-            min-height: 22px !important;
-            border-radius: 6px !important;
+            min-height: 25px !important;
+            border-radius: 9999px !important;
             line-height: 1.25 !important;
-            background: rgba(255, 255, 255, 0.16) !important;
-            border: 1px solid rgba(255, 255, 255, 0.22) !important;
+            background: rgba(0, 0, 0, 0.45) !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
             color: #f8fafc !important;
             cursor: pointer !important;
-            margin: 0 !important;
+            margin: 2px 0 !important;
+            white-space: nowrap !important;
+            flex-shrink: 0 !important;
             transition: all 0.15s ease !important;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
         }
 
+        .metadata-form.compact-multisection .compact-tag-list .tag-button .tag-label {
+            white-space: nowrap !important;
+            width: auto !important;
+            display: inline-block !important;
+        }
+
         .metadata-form.compact-multisection .compact-tag-list .tag-button:hover {
-            background: rgba(255, 255, 255, 0.28) !important;
-            border-color: rgba(56, 189, 248, 0.6) !important;
+            background: rgba(255, 255, 255, 0.24) !important;
+            border-color: rgba(56, 189, 248, 0.65) !important;
             color: #ffffff !important;
             transform: translateY(-1px);
         }
