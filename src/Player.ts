@@ -414,19 +414,69 @@ class Players {
         return Number(player.getAttribute("data-video-id") || "0");
     }
 
+    public isModalOrOverlayActive(): boolean {
+        const isModelRoute = typeof window !== "undefined" && (
+            window.location.pathname.startsWith("/model/") ||
+            window.location.hash.startsWith("#model/") ||
+            window.location.hash.startsWith("#/model/")
+        );
+        const isModelOpen = Boolean(
+            this.modelPage?.isModelOpen() ||
+            (typeof document !== "undefined" && document.getElementById("model-view")?.classList.contains("hidden") === false)
+        );
+        const isProfileOpen = typeof document !== "undefined" &&
+            document.getElementById("profile-view")?.classList.contains("hidden") === false;
+        return Boolean(isModelRoute || isModelOpen || isProfileOpen);
+    }
+
+    public pauseAll() {
+        this.html.videoPlayers.forEach((player, index) => {
+            if (!player.paused) {
+                player.pause();
+            }
+            this.state.playing[index as PlayerIndex] = false;
+        });
+        this.updatePlayPauseIcon(false);
+    }
+
     private async playPlayer(player: HTMLVideoElement, index: PlayerIndex) {
+        if (this.isModalOrOverlayActive()) {
+            player.pause();
+            this.state.playing[index] = false;
+            this.updatePlayPauseIcon(false);
+            return;
+        }
+
         try {
             player.muted = this.muted;
             await player.play();
+            if (this.isModalOrOverlayActive()) {
+                player.pause();
+                this.state.playing[index] = false;
+                this.updatePlayPauseIcon(false);
+                return;
+            }
             this.state.playing[index] = true;
             this.updatePlayPauseIcon(true);
         } catch (error) {
             console.warn("Autoplay was blocked or interrupted, retrying with muted:", error);
             try {
+                if (this.isModalOrOverlayActive()) {
+                    player.pause();
+                    this.state.playing[index] = false;
+                    this.updatePlayPauseIcon(false);
+                    return;
+                }
                 player.muted = true;
                 this.muted = true;
                 this.syncAudioState();
                 await player.play();
+                if (this.isModalOrOverlayActive()) {
+                    player.pause();
+                    this.state.playing[index] = false;
+                    this.updatePlayPauseIcon(false);
+                    return;
+                }
                 this.state.playing[index] = true;
                 this.updatePlayPauseIcon(true);
             } catch (fallbackError) {
@@ -912,7 +962,11 @@ class Players {
             }
 
             if (e.key === 'ArrowLeft') navLeft?.click();
-            else if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); navCenter?.click(); }
+            else if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                if (this.isModalOrOverlayActive()) return;
+                navCenter?.click();
+            }
             else if (e.key === 'ArrowRight') navRight?.click();
         });
 
@@ -920,6 +974,10 @@ class Players {
             if (this.isTogglingPlay) return;
             this.isTogglingPlay = true;
             setTimeout(() => { this.isTogglingPlay = false; }, 200);
+
+            if (this.isModalOrOverlayActive()) {
+                return;
+            }
 
             const activeIndexes = this.getVisibleActivePlayerIndexes();
             if (activeIndexes.length === 0) return;
@@ -1417,6 +1475,7 @@ class Players {
     }
 
     private async togglePlayPause(index: PlayerIndex, multi = false): Promise<void> {
+        if (this.isModalOrOverlayActive()) return;
         const player = this.html.videoPlayers[index];
         if (!player || (!player.src && !this.getPlayerVideoId(player))) return;
         if (!player.paused) {

@@ -23,9 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
         () => {
             // Pause players on model page open
-            html.videoPlayers.forEach((p) => {
-                if (!p.paused) p.pause();
-            });
+            players.pauseAll();
         },
         () => {
             // Callback on model page close
@@ -39,9 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         state,
         () => {
             // Pause players on profile open
-            html.videoPlayers.forEach((p) => {
-                if (!p.paused) p.pause();
-            });
+            players.pauseAll();
         },
         () => {
             // Callback on profile close

@@ -54,10 +54,12 @@ export default class ModelPage {
             this.checkRoute();
         });
 
-        // Check initial route
-        setTimeout(() => {
-            this.checkRoute();
-        }, 200);
+        // Check initial route immediately on init
+        this.checkRoute();
+    }
+
+    public isModelOpen(): boolean {
+        return this.isOpen;
     }
 
     private checkRoute() {
