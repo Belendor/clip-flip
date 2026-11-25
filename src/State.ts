@@ -665,6 +665,31 @@ class State {
         }
     }
 
+    batchUpdateVideosInState(predicate: (v: any) => boolean, updates: Partial<VideoWithRelations>) {
+        const updateInList = (list: any[] | null) => {
+            if (!list) return;
+            for (let i = 0; i < list.length; i++) {
+                if (predicate(list[i])) {
+                    list[i] = { ...list[i], ...updates };
+                }
+            }
+        };
+        updateInList(this.taggedVideos);
+        updateInList(this.allVideos);
+        updateInList(this.trendingVideos);
+        updateInList(this.likedVideos);
+        for (const pool of this.taggedVideosBySection.values()) {
+            updateInList(pool);
+        }
+        if (this.newVideos) {
+            for (let i = 0; i < this.newVideos.length; i++) {
+                if (predicate(this.newVideos[i])) {
+                    this.newVideos[i] = { ...this.newVideos[i], ...updates };
+                }
+            }
+        }
+    }
+
     async fetchAllVideos(): Promise<void> {
         this.played = this.getPlayedVideos();
         this.clearEmptyState();

@@ -368,6 +368,106 @@ app.post('/videos/remove-tag', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/videos/batch-update-by-title', async (req: Request, res: Response) => {
+  try {
+    const { oldTitle, newTitle, title, models } = req.body;
+
+    let updatedVideosCount = 0;
+    const updatedIds: number[] = [];
+
+    // 1. Batch Title Update:
+    // Update all clips having title === oldTitle to newTitle
+    if (oldTitle && typeof oldTitle === "string" && oldTitle.trim() && newTitle && typeof newTitle === "string" && newTitle.trim()) {
+      const cleanOld = oldTitle.trim();
+      const cleanNew = newTitle.trim();
+
+      const matching = await prisma.video.findMany({
+        where: { title: cleanOld },
+        select: { id: true },
+      });
+
+      if (matching.length > 0) {
+        await prisma.video.updateMany({
+          where: { title: cleanOld },
+          data: { title: cleanNew },
+        });
+        updatedVideosCount += matching.length;
+        updatedIds.push(...matching.map((v) => v.id));
+      }
+
+      await prisma.newVideo.updateMany({
+        where: { title: cleanOld },
+        data: { title: cleanNew },
+      });
+    }
+
+    // 2. Batch Models Update:
+    // Update models for all clips having title === title
+    if (title && typeof title === "string" && title.trim() && Array.isArray(models)) {
+      const cleanTitle = title.trim();
+      const rawNames = models;
+      const modelNames = rawNames
+        .map((m: any) => typeof m === "string" ? m.trim() : (m?.name || "").trim())
+        .filter((name: string) => name && name.length > 0);
+
+      const connectOrCreateModels = modelNames.map((name: string) => ({
+        where: { name },
+        create: { name },
+      }));
+
+      const matching = await prisma.video.findMany({
+        where: { title: cleanTitle },
+        select: { id: true },
+      });
+
+      for (const v of matching) {
+        await prisma.video.update({
+          where: { id: v.id },
+          data: {
+            models: {
+              set: [],
+              connectOrCreate: connectOrCreateModels,
+            },
+          },
+        });
+        if (!updatedIds.includes(v.id)) {
+          updatedIds.push(v.id);
+        }
+      }
+
+      const matchingNew = await prisma.newVideo.findMany({
+        where: { title: cleanTitle },
+        select: { id: true },
+      });
+      for (const nv of matchingNew) {
+        await prisma.newVideo.update({
+          where: { id: nv.id },
+          data: {
+            models: {
+              set: [],
+              connectOrCreate: connectOrCreateModels,
+            },
+          },
+        });
+      }
+
+      updatedVideosCount = Math.max(updatedVideosCount, matching.length);
+    }
+
+    res.json({
+      success: true,
+      updatedCount: updatedVideosCount,
+      updatedIds,
+    });
+  } catch (error) {
+    console.error('Error in batch-update-by-title:', error);
+    res.status(500).json({
+      error: 'Failed to batch update videos by title',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 app.get('/videos/tags-by-title', async (req: Request, res: Response) => {
   try {
     const rawTitle = req.query.title?.toString().trim();

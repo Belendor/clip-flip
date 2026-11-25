@@ -108,6 +108,19 @@ export default class VideoApi {
         });
     }
 
+    async batchUpdateByTitle(payload: {
+        oldTitle?: string;
+        newTitle?: string;
+        title?: string;
+        models?: string[];
+    }): Promise<{ success: boolean; updatedCount: number; updatedIds: number[] }> {
+        return this.request("/videos/batch-update-by-title", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+    }
+
     async removeTag(videoId: number, tagTitle: string): Promise<void> {
         await this.request("/videos/remove-tag", {
             method: "POST",

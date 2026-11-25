@@ -501,12 +501,37 @@ class Players {
 
         this.state.sectionIds.forEach((section) => {
             this.html.metadata.metaDataInputs[section]?.forEach((input) => {
-                input.addEventListener("input", async (event) => {
-                    event.preventDefault();
-                    const target = event.target as HTMLInputElement | HTMLSelectElement;
+                input.addEventListener("focus", (event) => {
+                    const target = event.target as HTMLInputElement;
+                    target.dataset.originalValue = target.value.trim();
+                });
+
+                input.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        (event.target as HTMLElement).blur();
+                    }
+                });
+
+                input.addEventListener("blur", async (event) => {
+                    const target = event.target as HTMLInputElement;
                     const key = target.name || target.dataset.key || target.id;
-                    const value = target.value;
-                    if (key && key !== "id") await this.updateMeta(section, key, value);
+                    if (!key || key === "id") return;
+
+                    const newValue = target.value.trim();
+                    const prevValue = target.dataset.originalValue ?? "";
+
+                    if (newValue === prevValue) {
+                        return;
+                    }
+
+                    target.dataset.originalValue = newValue;
+
+                    if (key === "title" || key === "Title") {
+                        await this.handleTitleBlur(section, target, newValue);
+                    } else {
+                        await this.updateMeta(section, key, newValue);
+                    }
                 });
             });
         });
@@ -1192,9 +1217,16 @@ class Players {
             switch (key) {
                 case "id": input.value = String(video.id); break;
                 case "Title":
-                case "title": input.value = video.title ?? ""; break;
+                case "title":
+                    input.value = video.title ?? "";
+                    input.dataset.originalTitle = (video.title ?? "").trim();
+                    input.dataset.originalValue = (video.title ?? "").trim();
+                    break;
                 case "Studio":
-                case "studio": input.value = video.studio ?? ""; break;
+                case "studio":
+                    input.value = video.studio ?? "";
+                    input.dataset.originalValue = (video.studio ?? "").trim();
+                    break;
             }
         });
 
@@ -1210,6 +1242,7 @@ class Players {
                     if (updated) {
                         await this.populateMetadataForm(section, updated);
                     }
+                    await this.handleModelBatchPrompt(video, currentNames);
                 }
             },
             async (modelName: string) => {
@@ -1220,6 +1253,7 @@ class Players {
                 if (updated) {
                     await this.populateMetadataForm(section, updated);
                 }
+                await this.handleModelBatchPrompt(video, filtered);
             }
         );
 
@@ -1669,6 +1703,141 @@ class Players {
             console.error(`Failed to update metadata for video ${activeIndex}:`, error);
             return null;
         }
+    }
+
+    private async handleTitleBlur(section: SectionId, input: HTMLInputElement, newTitle: string) {
+        const originalTitle = (input.dataset.originalTitle || "").trim();
+
+        // 1. Update the current clip with the new title
+        const updated = await this.updateMeta(section, "title", newTitle);
+        input.dataset.originalTitle = newTitle;
+        input.dataset.originalValue = newTitle;
+
+        // 2. Ask if user wants to update other clips that had originalTitle
+        if (originalTitle && originalTitle.toLowerCase() !== newTitle.toLowerCase()) {
+            const confirmed = await this.showConfirmDialog({
+                title: "Update other clips?",
+                message: `Do you want to update all other clips that had the title "${originalTitle}" to "${newTitle}"?`,
+                confirmText: "Update All",
+                cancelText: "Only This Clip",
+            });
+
+            if (confirmed) {
+                try {
+                    const res = await this.api.batchUpdateByTitle({
+                        oldTitle: originalTitle,
+                        newTitle: newTitle,
+                    });
+                    if (res && res.updatedCount > 0) {
+                        this.state.batchUpdateVideosInState(
+                            (v) => (v.title || "").trim().toLowerCase() === originalTitle.toLowerCase(),
+                            { title: newTitle }
+                        );
+                        this.showToast(`Updated ${res.updatedCount} clips with new title!`);
+                    }
+                } catch (err) {
+                    console.error("Batch title update failed", err);
+                }
+            }
+        }
+    }
+
+    private async handleModelBatchPrompt(video: VideoWithRelations, newModelNames: string[]) {
+        const clipTitle = (video.title || "").trim();
+        if (!clipTitle) return;
+
+        const confirmed = await this.showConfirmDialog({
+            title: "Update models for other clips?",
+            message: `Do you want to update models for all other clips with title "${clipTitle}"?`,
+            confirmText: "Update All",
+            cancelText: "Only This Clip",
+        });
+
+        if (confirmed) {
+            try {
+                const res = await this.api.batchUpdateByTitle({
+                    title: clipTitle,
+                    models: newModelNames,
+                });
+                if (res && res.updatedCount > 0) {
+                    const modelObjects = newModelNames.map((name) => ({ id: 0, name }));
+                    this.state.batchUpdateVideosInState(
+                        (v) => (v.title || "").trim().toLowerCase() === clipTitle.toLowerCase(),
+                        { models: modelObjects }
+                    );
+                    this.showToast(`Updated models for ${res.updatedCount} clips!`);
+                }
+            } catch (err) {
+                console.error("Batch model update failed", err);
+            }
+        }
+    }
+
+    public showConfirmDialog(options: {
+        title: string;
+        message: string;
+        confirmText?: string;
+        cancelText?: string;
+    }): Promise<boolean> {
+        return new Promise((resolve) => {
+            document.querySelector(".cf-confirm-modal")?.remove();
+
+            const modal = document.createElement("div");
+            modal.className = "cf-confirm-modal";
+
+            modal.innerHTML = `
+                <div class="cf-confirm-backdrop"></div>
+                <div class="cf-confirm-box" role="dialog" aria-modal="true">
+                    <div class="cf-confirm-header">
+                        <span class="cf-confirm-icon">⚡</span>
+                        <h3 class="cf-confirm-title">${this.escapeHtml(options.title)}</h3>
+                    </div>
+                    <p class="cf-confirm-message">${this.escapeHtml(options.message)}</p>
+                    <div class="cf-confirm-actions">
+                        <button type="button" class="cf-confirm-btn cf-confirm-cancel">${this.escapeHtml(options.cancelText || "Cancel")}</button>
+                        <button type="button" class="cf-confirm-btn cf-confirm-accept">${this.escapeHtml(options.confirmText || "Confirm")}</button>
+                    </div>
+                </div>
+            `;
+
+            const cleanup = (result: boolean) => {
+                document.removeEventListener("keydown", onKeyDown);
+                modal.classList.add("cf-fade-out");
+                setTimeout(() => modal.remove(), 200);
+                resolve(result);
+            };
+
+            const onKeyDown = (e: KeyboardEvent) => {
+                if (e.key === "Escape") cleanup(false);
+                else if (e.key === "Enter") cleanup(true);
+            };
+
+            document.addEventListener("keydown", onKeyDown);
+
+            modal.querySelector(".cf-confirm-backdrop")?.addEventListener("click", () => cleanup(false));
+            modal.querySelector(".cf-confirm-cancel")?.addEventListener("click", () => cleanup(false));
+            modal.querySelector(".cf-confirm-accept")?.addEventListener("click", () => cleanup(true));
+
+            document.body.appendChild(modal);
+        });
+    }
+
+    public showToast(message: string) {
+        document.querySelectorAll(".cf-toast").forEach((t) => t.remove());
+        const toast = document.createElement("div");
+        toast.className = "cf-toast";
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add("cf-toast-hide");
+            setTimeout(() => toast.remove(), 300);
+        }, 3200);
+    }
+
+    private escapeHtml(str: string): string {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     public setModelPage(page: ModelPage) {
