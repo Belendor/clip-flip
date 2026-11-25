@@ -669,12 +669,13 @@ class Players {
         }
 
         // ── Mobile Swipe Navigation ────────────────────────────────
-        // Down or Right = Next clip
-        // Up or Left   = Previous (Back) clip
+        // Swipe Left or Swipe Up   = Next clip
+        // Swipe Right or Swipe Down = Previous (Back) clip
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
         let isTouchTracking = false;
+        let currentTargetSlot: HTMLElement | null = null;
 
         const SWIPE_THRESHOLD = 45;
         const SWIPE_MAX_TIME = 800;
@@ -690,6 +691,37 @@ class Players {
                 el.isContentEditable ||
                 el.closest("input, textarea, select, button, a, [contenteditable='true'], .metadata-form, .upload-form, .model-view, .cf-confirm-modal, .login-prompt-toast, #top-toolbar, .toolbar, .tag-container, .metadata-tag-list")
             );
+        };
+
+        const getActiveSlot = (): HTMLElement | null => {
+            const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+            const [frontIdx, backIdx] = this.getSectionPlayerIndexes(section);
+            const activeIdx = this.state.active[frontIdx] ? frontIdx : backIdx;
+            return this.html.videoPlayers[activeIdx]?.parentElement || null;
+        };
+
+        const resetSlotAnimation = (slot: HTMLElement | null) => {
+            if (!slot) return;
+            slot.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.22s ease';
+            slot.style.transform = 'translate3d(0, 0, 0)';
+            slot.style.opacity = '1';
+            setTimeout(() => {
+                slot.style.transition = '';
+                slot.style.transform = '';
+                slot.style.opacity = '';
+            }, 240);
+        };
+
+        const animateSlotOut = (slot: HTMLElement | null, transX: string, transY: string) => {
+            if (!slot) return;
+            slot.style.transition = 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease-out';
+            slot.style.transform = `translate3d(${transX}, ${transY}, 0)`;
+            slot.style.opacity = '0';
+            setTimeout(() => {
+                slot.style.transition = '';
+                slot.style.transform = '';
+                slot.style.opacity = '';
+            }, 240);
         };
 
         const onTouchStart = (e: TouchEvent) => {
@@ -710,6 +742,11 @@ class Players {
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
             touchStartTime = Date.now();
+
+            currentTargetSlot = getActiveSlot();
+            if (currentTargetSlot) {
+                currentTargetSlot.style.transition = 'none';
+            }
         };
 
         const onTouchMove = (e: TouchEvent) => {
@@ -719,11 +756,26 @@ class Players {
             const currentY = e.touches[0].clientY;
             const deltaX = currentX - touchStartX;
             const deltaY = currentY - touchStartY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
 
-            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+            if (absX > 8 || absY > 8) {
                 isSwipingGesture = true;
                 if (e.cancelable) {
                     e.preventDefault();
+                }
+
+                // Interactive drag feedback while swiping
+                if (currentTargetSlot) {
+                    if (absX >= absY) {
+                        const dragX = deltaX * 0.72;
+                        currentTargetSlot.style.transform = `translate3d(${dragX}px, 0, 0)`;
+                        currentTargetSlot.style.opacity = `${Math.max(0.4, 1 - Math.abs(dragX) / 450)}`;
+                    } else {
+                        const dragY = deltaY * 0.72;
+                        currentTargetSlot.style.transform = `translate3d(0, ${dragY}px, 0)`;
+                        currentTargetSlot.style.opacity = `${Math.max(0.4, 1 - Math.abs(dragY) / 450)}`;
+                    }
                 }
             }
         };
@@ -733,13 +785,20 @@ class Players {
             if (!isTouchTracking) return;
             isTouchTracking = false;
 
+            const slotToAnimate = currentTargetSlot;
+            currentTargetSlot = null;
+
             const duration = Date.now() - touchStartTime;
             if (duration > SWIPE_MAX_TIME) {
+                resetSlotAnimation(slotToAnimate);
                 return;
             }
 
             const changedTouch = e.changedTouches[0];
-            if (!changedTouch) return;
+            if (!changedTouch) {
+                resetSlotAnimation(slotToAnimate);
+                return;
+            }
 
             const deltaX = changedTouch.clientX - touchStartX;
             const deltaY = changedTouch.clientY - touchStartY;
@@ -747,43 +806,62 @@ class Players {
             const absY = Math.abs(deltaY);
 
             if (absX < SWIPE_THRESHOLD && absY < SWIPE_THRESHOLD) {
-                // Tap, not a swipe
+                // Tap, not a swipe - smoothly reset position
+                resetSlotAnimation(slotToAnimate);
                 return;
             }
 
             let isNext = false;
             let isBack = false;
+            let outX = '0';
+            let outY = '0';
 
-            // Dominant axis determines direction:
-            // Horizontal: Right = Next, Left = Back
-            // Vertical:   Down  = Next, Up   = Back
+            // User configuration:
+            // Swipe Left or Swipe Up   = Next clip
+            // Swipe Right or Swipe Down = Previous (Back) clip
             if (absX >= absY) {
-                if (deltaX > SWIPE_THRESHOLD) {
+                if (deltaX < -SWIPE_THRESHOLD) {
                     isNext = true;
-                } else if (deltaX < -SWIPE_THRESHOLD) {
+                    outX = '-40%';
+                } else if (deltaX > SWIPE_THRESHOLD) {
                     isBack = true;
+                    outX = '40%';
                 }
             } else {
-                if (deltaY > SWIPE_THRESHOLD) {
+                if (deltaY < -SWIPE_THRESHOLD) {
                     isNext = true;
-                } else if (deltaY < -SWIPE_THRESHOLD) {
+                    outY = '-40%';
+                } else if (deltaY > SWIPE_THRESHOLD) {
                     isBack = true;
+                    outY = '40%';
                 }
             }
 
             if (isNext) {
                 if (e.cancelable) e.preventDefault();
+                animateSlotOut(slotToAnimate, outX, outY);
                 triggerNext();
             } else if (isBack) {
                 if (e.cancelable) e.preventDefault();
+                animateSlotOut(slotToAnimate, outX, outY);
                 void triggerBack();
+            } else {
+                resetSlotAnimation(slotToAnimate);
             }
         };
 
         window.addEventListener("touchstart", onTouchStart, { passive: true });
         window.addEventListener("touchmove", onTouchMove, { passive: false });
         window.addEventListener("touchend", onTouchEnd, { passive: false });
-        window.addEventListener("touchcancel", () => { isTouchTracking = false; }, { passive: true });
+        window.addEventListener("touchcancel", () => {
+            isTouchTracking = false;
+            if (currentTargetSlot) {
+                currentTargetSlot.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+                currentTargetSlot.style.transform = '';
+                currentTargetSlot.style.opacity = '';
+                currentTargetSlot = null;
+            }
+        }, { passive: true });
 
         document.addEventListener('keydown', (e) => {
             const target = e.target as HTMLElement | null;
