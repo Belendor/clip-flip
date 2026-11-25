@@ -841,6 +841,12 @@ app.get('/tags/:name', async (req: Request, res: Response) => {
       },
       include: {
         videos: {
+          where: {
+            AND: [
+              { title: { not: null } },
+              { title: { not: "" } },
+            ],
+          },
           include: {
             tags: true,
             models: true,
@@ -860,7 +866,8 @@ app.get('/tags/:name', async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Tag not found" });
     }
 
-    const mappedVideos = tag.videos.map((video) => {
+    const validVideos = tag.videos.filter((v) => v.title && v.title.trim().length > 0);
+    const mappedVideos = validVideos.map((video) => {
       const likes = video.reactions.filter((r) => r.type === "like").length;
       const dislikes = video.reactions.filter((r) => r.type === "dislike").length;
       const myReaction = userId
@@ -1170,11 +1177,26 @@ app.get('/tag/:name', async (req: Request, res: Response) => {
       where: { title: { equals: rawName } },
       include: {
         videos: {
+          where: {
+            AND: [
+              { title: { not: null } },
+              { title: { not: "" } },
+            ],
+          },
           take: 1,
           select: { id: true, title: true },
           orderBy: { id: "asc" },
         },
-        _count: { select: { videos: true } },
+      },
+    });
+
+    const titledCount = await prisma.video.count({
+      where: {
+        tags: { some: { title: { equals: rawName } } },
+        AND: [
+          { title: { not: null } },
+          { title: { not: "" } },
+        ],
       },
     });
 
@@ -1193,7 +1215,7 @@ app.get('/tag/:name', async (req: Request, res: Response) => {
 
     if (tag) {
       const cleanName = tag.title.trim();
-      const count = tag._count?.videos || 0;
+      const count = titledCount;
       const countLabel = count > 0 ? ` (${count} Clips)` : "";
       const capitalized = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
       const pageTitle = `${capitalized}${countLabel} - Free Video Clips & Sets | ClipFlip`;

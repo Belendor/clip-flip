@@ -172,11 +172,15 @@ export default class TagPage {
                 console.warn("fetchTagDetails failed, falling back to query", err);
             }
 
-            let videos: VideoWithRelations[] = tagData?.videos || [];
+            // Exclude clips with no title
+            let videos: VideoWithRelations[] = (tagData?.videos || []).filter(
+                (v: any) => v.title && String(v.title).trim().length > 0
+            );
 
-            // If empty, fallback to searching allVideos or videos endpoint
+            // If empty, fallback to searching allVideos or videos endpoint (also filtering for titled clips only)
             if (videos.length === 0 && this.state.allVideos && this.state.allVideos.length > 0) {
                 videos = this.state.allVideos.filter((v: any) =>
+                    v.title && String(v.title).trim().length > 0 &&
                     Array.isArray(v.tags) && v.tags.some((t: any) =>
                         (t.title || "").trim().toLowerCase() === tagName.trim().toLowerCase()
                     )
@@ -186,7 +190,9 @@ export default class TagPage {
             if (videos.length === 0) {
                 try {
                     const searched = await this.api.fetchVideos(`?tag=${encodeURIComponent(tagName)}`);
-                    videos = searched || [];
+                    videos = (searched || []).filter(
+                        (v: any) => v.title && String(v.title).trim().length > 0
+                    );
                 } catch (_) {}
             }
 
@@ -201,7 +207,7 @@ export default class TagPage {
                 return a.id - b.id;
             });
 
-            // Group clips by title
+            // Group clips by title (excluding any clip without title)
             interface TagVideoGroup {
                 key: string;
                 title: string;
@@ -213,13 +219,14 @@ export default class TagPage {
 
             for (const v of videos) {
                 const trimmedTitle = (v.title || "").trim();
-                const groupKey = trimmedTitle ? `title:${trimmedTitle.toLowerCase()}` : `id:${v.id}`;
+                if (!trimmedTitle) continue;
+                const groupKey = `title:${trimmedTitle.toLowerCase()}`;
 
                 let group = groupMap.get(groupKey);
                 if (!group) {
                     group = {
                         key: groupKey,
-                        title: trimmedTitle || `Clip #${v.id}`,
+                        title: trimmedTitle,
                         videos: [],
                     };
                     groupMap.set(groupKey, group);
@@ -238,9 +245,10 @@ export default class TagPage {
                 });
             }
 
-            const badgeCountText = groups.length < videos.length
-                ? `${videos.length} Clips (${groups.length} Sets)`
-                : `${videos.length} ${videos.length === 1 ? "Clip" : "Clips"}`;
+            const totalTitledVideos = groups.reduce((acc, g) => acc + g.videos.length, 0);
+            const badgeCountText = groups.length < totalTitledVideos
+                ? `${totalTitledVideos} Clips (${groups.length} Sets)`
+                : `${totalTitledVideos} ${totalTitledVideos === 1 ? "Clip" : "Clips"}`;
 
             const displayName = tagName.charAt(0).toUpperCase() + tagName.slice(1);
 
@@ -255,7 +263,7 @@ export default class TagPage {
                             <span class="model-badge">${badgeCountText}</span>
                         </div>
                         <div class="model-banner-actions">
-                            ${videos.length > 0 ? `
+                            ${totalTitledVideos > 0 ? `
                                 <button type="button" class="model-play-all-btn" id="tag-play-all-btn">
                                     <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
                                         <polygon points="5 3 19 12 5 21 5 3"/>
@@ -272,9 +280,9 @@ export default class TagPage {
                         <h3 class="model-grid-title">All Clips</h3>
                         <span class="text-xs text-gray-400">Click any clip to play from that point in sequence</span>
                     </div>
-                    ${videos.length === 0 ? `
+                    ${totalTitledVideos === 0 ? `
                         <div class="model-empty-box">
-                            <p class="text-gray-400 text-sm">No clips found for tag "#${this.escapeHtml(tagName)}".</p>
+                            <p class="text-gray-400 text-sm">No titled clips found for tag "#${this.escapeHtml(tagName)}".</p>
                         </div>
                     ` : `
                         <div class="model-clips-grid" id="tag-clips-grid"></div>
