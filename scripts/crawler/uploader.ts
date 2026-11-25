@@ -47,6 +47,7 @@ export class ClipFlipUploader {
                 tempFirstThumbName: seg.tempFirstThumbName,
                 tempMiddleThumbName: seg.tempMiddleThumbName,
                 title: seg.title,
+                model: seg.model,
                 seriesNr: seg.seriesNr,
                 seriesTotal: seg.seriesTotal,
                 startTime: seg.startTime,

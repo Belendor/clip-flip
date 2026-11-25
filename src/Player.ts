@@ -1670,12 +1670,13 @@ class Players {
                         }
                     });
 
-                    const pageBtn = document.createElement("button");
-                    pageBtn.type = "button";
+                    const pageBtn = document.createElement("a");
+                    pageBtn.href = `/model/${encodeURIComponent(model.name.trim())}`;
                     pageBtn.className = "metadata-model-page-btn";
                     pageBtn.innerHTML = `⊞ Page`;
                     pageBtn.title = `View all clips of ${model.name} in grid`;
                     pageBtn.addEventListener("click", (e) => {
+                        e.preventDefault();
                         e.stopPropagation();
                         this.openModelPage(model.name);
                     });

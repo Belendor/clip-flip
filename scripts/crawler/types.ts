@@ -57,6 +57,7 @@ export interface ProcessedSegment {
     seriesNr: number;
     seriesTotal: number;
     tags: string[];
+    model?: string;
 }
 
 export interface UploadBatchResult {

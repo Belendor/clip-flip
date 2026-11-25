@@ -927,6 +927,171 @@ app.get('/models/:name', async (req: Request, res: Response) => {
   }
 });
 
+// Dynamic XML Sitemap for Google & search engine crawlers
+app.get('/sitemap.xml', async (req: Request, res: Response) => {
+  try {
+    const baseUrl = "https://clip-flip.com";
+
+    // 1. Fetch all models having at least 1 approved video
+    const models = await prisma.model.findMany({
+      where: {
+        videos: { some: {} },
+      },
+      select: {
+        name: true,
+      },
+      orderBy: { name: "asc" },
+    });
+
+    // 2. Fetch all tags having at least 1 approved video
+    const tags = await prisma.tag.findMany({
+      where: {
+        videos: { some: {} },
+      },
+      select: {
+        title: true,
+      },
+      orderBy: { title: "asc" },
+    });
+
+    const now = new Date().toISOString().split("T")[0];
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+
+    // Static pages
+    xml += `  <url>\n    <loc>${baseUrl}/</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n`;
+    xml += `  <url>\n    <loc>${baseUrl}/terms.html</loc>\n    <changefreq>yearly</changefreq>\n    <priority>0.3</priority>\n  </url>\n`;
+
+    // Dynamic model pages
+    for (const m of models) {
+      const cleanName = m.name.trim();
+      if (!cleanName) continue;
+      const modelUrl = `${baseUrl}/model/${encodeURIComponent(cleanName)}`;
+      xml += `  <url>\n    <loc>${modelUrl}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+    }
+
+    // Dynamic tag pages
+    for (const t of tags) {
+      const cleanTag = t.title.trim();
+      if (!cleanTag) continue;
+      const tagUrl = `${baseUrl}/?tag=${encodeURIComponent(cleanTag)}`;
+      xml += `  <url>\n    <loc>${tagUrl}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>\n`;
+    }
+
+    xml += `</urlset>`;
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.send(xml);
+  } catch (error) {
+    console.error("Error generating sitemap.xml:", error);
+    res.status(500).send("Error generating sitemap");
+  }
+});
+
+// robots.txt for Google & search engine crawlers
+app.get('/robots.txt', (req: Request, res: Response) => {
+  const content = [
+    "User-agent: *",
+    "Allow: /",
+    "",
+    "Sitemap: https://clip-flip.com/sitemap.xml",
+  ].join("\n");
+
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  return res.send(content);
+});
+
+// Server-Side Rendered Meta & OpenGraph tags for model pages (Googlebot & Social Cards)
+app.get('/model/:name', async (req: Request, res: Response) => {
+  try {
+    const rawName = decodeURIComponent(req.params.name).trim();
+    const model = await prisma.model.findFirst({
+      where: { name: { equals: rawName } },
+      include: {
+        videos: {
+          take: 1,
+          select: { id: true, title: true },
+          orderBy: { id: "asc" },
+        },
+        _count: { select: { videos: true } },
+      },
+    });
+
+    const candidatePaths = [
+      "/var/www/clipflip/index.html",
+      path.resolve(__dirname, "../index.html"),
+      path.resolve(process.cwd(), "index.html"),
+    ];
+    const indexPath = candidatePaths.find((p) => fsSync.existsSync(p));
+
+    if (!indexPath) {
+      return res.status(404).send("index.html not found");
+    }
+
+    let html = fsSync.readFileSync(indexPath, "utf-8");
+
+    if (model) {
+      const cleanName = model.name.trim();
+      const count = model._count?.videos || 0;
+      const countLabel = count > 0 ? ` (${count} Clips)` : "";
+      const pageTitle = `${cleanName}${countLabel} - Videos & Clips | ClipFlip`;
+      const pageDesc = `Watch uninterrupted video clips and sets by ${cleanName} on ClipFlip with zero buffering. Continuous playback, no signup required.`;
+      const pageUrl = `https://clip-flip.com/model/${encodeURIComponent(cleanName)}`;
+      const firstVid = model.videos?.[0];
+      const thumbUrl = firstVid
+        ? `https://clip-flip.com/thumbnails/${firstVid.id}_middle.jpg`
+        : `https://clip-flip.com/thumbnail.jpg`;
+
+      // Replace generic meta tags with model-specific ones
+      html = html.replace(/<title>.*?<\/title>/i, `<title>${pageTitle}</title>`);
+      html = html.replace(/<meta name="description" content=".*?"\/?>/i, `<meta name="description" content="${pageDesc}">`);
+      html = html.replace(/<meta property="og:title" content=".*?"\/?>/i, `<meta property="og:title" content="${pageTitle}">`);
+      html = html.replace(/<meta property="og:description" content=".*?"\/?>/i, `<meta property="og:description" content="${pageDesc}">`);
+      html = html.replace(/<meta property="og:url" content=".*?"\/?>/i, `<meta property="og:url" content="${pageUrl}">`);
+      html = html.replace(/<meta property="og:image" content=".*?"\/?>/i, `<meta property="og:image" content="${thumbUrl}">`);
+      html = html.replace(/<meta name="twitter:title" content=".*?"\/?>/i, `<meta name="twitter:title" content="${pageTitle}">`);
+      html = html.replace(/<meta name="twitter:description" content=".*?"\/?>/i, `<meta name="twitter:description" content="${pageDesc}">`);
+      html = html.replace(/<meta name="twitter:image" content=".*?"\/?>/i, `<meta name="twitter:image" content="${thumbUrl}">`);
+
+      // Add canonical URL and JSON-LD Person/ProfilePage Schema for Google indexing
+      const schemaData = {
+        "@context": "https://schema.org",
+        "@type": "ProfilePage",
+        "name": pageTitle,
+        "description": pageDesc,
+        "url": pageUrl,
+        "mainEntity": {
+          "@type": "Person",
+          "name": cleanName,
+          "image": thumbUrl,
+          "url": pageUrl,
+          "sameAs": model.source || undefined,
+        },
+      };
+
+      const seoInjection = `
+    <link rel="canonical" href="${pageUrl}">
+    <script type="application/ld+json">
+${JSON.stringify(schemaData, null, 2)}
+    </script>
+`;
+      html = html.replace("</head>", `${seoInjection}</head>`);
+    }
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(html);
+  } catch (error) {
+    console.error("Error serving model page:", error);
+    const fallbackPath = fsSync.existsSync("/var/www/clipflip/index.html")
+      ? "/var/www/clipflip/index.html"
+      : path.resolve(__dirname, "../index.html");
+    return res.sendFile(fallbackPath);
+  }
+});
+
 app.post('/models', async (req: Request, res: Response) => {
   try {
     const { name, source, alias } = req.body;
@@ -1441,7 +1606,7 @@ async function fetchRedGifsDetails(url: string): Promise<{ uploader?: string; vi
     }
 
     const uploader = gif.userName || undefined;
-    const title = uploader ? `${uploader},${casedId}` : casedId;
+    const title = casedId;
 
     return {
       uploader,
@@ -1452,6 +1617,20 @@ async function fetchRedGifsDetails(url: string): Promise<{ uploader?: string; vi
     };
   } catch (_) {
     return { videoId: rawId, title: rawId };
+  }
+}
+
+// Case-insensitive model lookup against existing database models
+async function findExistingModel(name?: string | null): Promise<string | undefined> {
+  if (!name || !name.trim()) return undefined;
+  const clean = name.trim().toLowerCase();
+  try {
+    const models = await prisma.model.findMany({ select: { name: true } });
+    const matched = models.find((m) => m.name.trim().toLowerCase() === clean);
+    return matched ? matched.name : undefined;
+  } catch (err) {
+    console.warn("[findExistingModel] Error searching models:", err);
+    return undefined;
   }
 }
 
@@ -1683,7 +1862,8 @@ app.post("/upload-url", async (req: Request, res: Response) => {
       const { finalUrl, uploader, videoId, autoTitle } = await downloadRemoteMedia(sourceUrl, rawTempPath);
 
       const duration = getVideoDuration(rawTempPath);
-      console.log(`[upload-url] Downloaded successfully! Duration: ${duration.toFixed(1)}s (Uploader: ${uploader || 'none'})`);
+      const matchedModel = uploader ? await findExistingModel(uploader) : undefined;
+      console.log(`[upload-url] Downloaded successfully! Duration: ${duration.toFixed(1)}s (Uploader: ${uploader || 'none'}, Matched Model: ${matchedModel || 'none'})`);
 
       const urlObj = new URL(finalUrl);
       const urlFileName = path.basename(urlObj.pathname);
@@ -1755,7 +1935,7 @@ app.post("/upload-url", async (req: Request, res: Response) => {
           tempFirstThumbName,
           tempMiddleThumbName,
           title: baseTitle,
-          model: uploader,
+          model: matchedModel,
           seriesNr: segNr,
           seriesTotal: totalSegments,
           startTime: range.start,
@@ -1842,8 +2022,8 @@ app.post("/upload-url", async (req: Request, res: Response) => {
         const firstThumbPath = path.join(tempThumbDir, seg.tempFirstThumbName);
         const midThumbPath = path.join(tempThumbDir, seg.tempMiddleThumbName);
 
-        const titleParts = seg.title ? seg.title.split(",") : [];
-        const modelCandidate = seg.model || (titleParts.length > 1 ? titleParts[0].trim() : undefined);
+        const modelCandidate = seg.model || undefined;
+        const existingModel = modelCandidate ? await findExistingModel(modelCandidate) : undefined;
 
         const newVideo = await prisma.newVideo.create({
           data: {
@@ -1854,14 +2034,9 @@ app.post("/upload-url", async (req: Request, res: Response) => {
             seriesTotal: seg.seriesTotal ?? null,
             userId: uploaderId && !isNaN(uploaderId) ? uploaderId : undefined,
             tags: tagId ? { connect: [{ id: Number(tagId) }] } : undefined,
-            models: modelCandidate
+            models: existingModel
               ? {
-                  connectOrCreate: [
-                    {
-                      where: { name: modelCandidate },
-                      create: { name: modelCandidate },
-                    },
-                  ],
+                  connect: [{ name: existingModel }],
                 }
               : undefined,
           },
@@ -1992,6 +2167,7 @@ app.post(
           const titleParts = seg.title ? seg.title.split(",") : [];
           const modelCandidate = seg.model || (titleParts.length > 1 ? titleParts[0].trim() : undefined);
           const rawVideoId = titleParts.length > 1 ? titleParts[1].trim() : undefined;
+          const existingModel = modelCandidate ? await findExistingModel(modelCandidate) : undefined;
 
           // Duplicate defence: check if this specific segment or video already exists in DB
           const dupConditions: any[] = [];
@@ -2043,14 +2219,9 @@ app.post(
               tags: tagConnectOrCreate.length > 0
                 ? { connectOrCreate: tagConnectOrCreate }
                 : (tagId ? { connect: [{ id: Number(tagId) }] } : undefined),
-              models: modelCandidate
+              models: existingModel
                 ? {
-                    connectOrCreate: [
-                      {
-                        where: { name: modelCandidate },
-                        create: { name: modelCandidate },
-                      },
-                    ],
+                    connect: [{ name: existingModel }],
                   }
                 : undefined,
             },

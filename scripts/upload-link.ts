@@ -211,8 +211,8 @@ async function main() {
             const fileName = path.basename(urlObj.pathname);
             const nameWithoutExt = detail.videoId || path.parse(fileName).name;
 
-            // Automatic title format: uploader,videoId (e.g. alicefruity,DangerousNumbPrimate)
-            const autoTitle = detail.uploader ? `${detail.uploader},${nameWithoutExt}` : nameWithoutExt;
+            // Clean single string title format (e.g. DangerousNumbPrimate)
+            const autoTitle = nameWithoutExt;
             const clipTitle = title && String(title).trim() ? String(title).trim() : autoTitle;
             console.log(`  🏷️  Title: "${clipTitle}"`);
 
@@ -232,6 +232,12 @@ async function main() {
                 null,
                 maxSegments
             );
+
+            if (detail.uploader) {
+                segments.forEach((s) => {
+                    s.model = detail.uploader;
+                });
+            }
 
             console.log(`  ✨ Created ${segments.length} segment(s) ready for ClipFlip!`);
             allProcessedSegments.push(...segments);
