@@ -611,14 +611,39 @@ class Players {
         const videoFront = document.getElementById('v1-front') as HTMLVideoElement | null;
         const videoBack = document.getElementById('v1-back') as HTMLVideoElement | null;
 
-        if (navLeft) {
-            navLeft.addEventListener('click', async (e) => {
-                e.stopPropagation();
+        let lastTouchTime = 0;
+        let isSwipingGesture = false;
+
+        const triggerNext = () => {
+            if (navRight) {
+                navRight.style.transition = 'transform 0.1s';
+                navRight.style.transform = 'scale(0.85)';
+                setTimeout(() => navRight.style.transform = 'scale(1)', 150);
+            }
+            const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+            const [frontIdx, backIdx] = this.getSectionPlayerIndexes(section);
+            const activeIdx = this.state.active[frontIdx] ? frontIdx : backIdx;
+            void this.handlePlayerEnded(activeIdx);
+        };
+
+        const triggerBack = async () => {
+            if (navLeft) {
                 navLeft.style.transition = 'transform 0.1s';
                 navLeft.style.transform = 'scale(0.85)';
                 setTimeout(() => navLeft.style.transform = 'scale(1)', 150);
-                const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
-                await this.navigateBack(section);
+            }
+            const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+            await this.navigateBack(section);
+        };
+
+        if (navLeft) {
+            navLeft.addEventListener('click', async (e) => {
+                // On mobile touch devices, side clicking is replaced by swipe navigation
+                if ((e as PointerEvent).pointerType === 'touch' || Date.now() - lastTouchTime < 700) {
+                    return;
+                }
+                e.stopPropagation();
+                await triggerBack();
             });
         }
 
@@ -634,16 +659,131 @@ class Players {
 
         if (navRight) {
             navRight.addEventListener('click', (e) => {
+                // On mobile touch devices, side clicking is replaced by swipe navigation
+                if ((e as PointerEvent).pointerType === 'touch' || Date.now() - lastTouchTime < 700) {
+                    return;
+                }
                 e.stopPropagation();
-                navRight.style.transition = 'transform 0.1s';
-                navRight.style.transform = 'scale(0.85)';
-                setTimeout(() => navRight.style.transform = 'scale(1)', 150);
-                const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
-                const [frontIdx, backIdx] = this.getSectionPlayerIndexes(section);
-                const activeIdx = this.state.active[frontIdx] ? frontIdx : backIdx;
-                void this.handlePlayerEnded(activeIdx);
+                triggerNext();
             });
         }
+
+        // ── Mobile Swipe Navigation ────────────────────────────────
+        // Down or Right = Next clip
+        // Up or Left   = Previous (Back) clip
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let isTouchTracking = false;
+
+        const SWIPE_THRESHOLD = 45;
+        const SWIPE_MAX_TIME = 800;
+
+        const isInteractiveElement = (el: HTMLElement | null): boolean => {
+            if (!el) return false;
+            return Boolean(
+                el.tagName === "INPUT" ||
+                el.tagName === "TEXTAREA" ||
+                el.tagName === "SELECT" ||
+                el.tagName === "BUTTON" ||
+                el.tagName === "A" ||
+                el.isContentEditable ||
+                el.closest("input, textarea, select, button, a, [contenteditable='true'], .metadata-form, .upload-form, .model-view, .cf-confirm-modal, .login-prompt-toast, #top-toolbar, .toolbar, .tag-container, .metadata-tag-list")
+            );
+        };
+
+        const onTouchStart = (e: TouchEvent) => {
+            lastTouchTime = Date.now();
+            if (e.touches.length !== 1) {
+                isTouchTracking = false;
+                return;
+            }
+
+            const target = e.target as HTMLElement | null;
+            if (isInteractiveElement(target)) {
+                isTouchTracking = false;
+                return;
+            }
+
+            isTouchTracking = true;
+            isSwipingGesture = false;
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            touchStartTime = Date.now();
+        };
+
+        const onTouchMove = (e: TouchEvent) => {
+            if (!isTouchTracking || e.touches.length !== 1) return;
+
+            const currentX = e.touches[0].clientX;
+            const currentY = e.touches[0].clientY;
+            const deltaX = currentX - touchStartX;
+            const deltaY = currentY - touchStartY;
+
+            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                isSwipingGesture = true;
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
+            }
+        };
+
+        const onTouchEnd = (e: TouchEvent) => {
+            lastTouchTime = Date.now();
+            if (!isTouchTracking) return;
+            isTouchTracking = false;
+
+            const duration = Date.now() - touchStartTime;
+            if (duration > SWIPE_MAX_TIME) {
+                return;
+            }
+
+            const changedTouch = e.changedTouches[0];
+            if (!changedTouch) return;
+
+            const deltaX = changedTouch.clientX - touchStartX;
+            const deltaY = changedTouch.clientY - touchStartY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+
+            if (absX < SWIPE_THRESHOLD && absY < SWIPE_THRESHOLD) {
+                // Tap, not a swipe
+                return;
+            }
+
+            let isNext = false;
+            let isBack = false;
+
+            // Dominant axis determines direction:
+            // Horizontal: Right = Next, Left = Back
+            // Vertical:   Down  = Next, Up   = Back
+            if (absX >= absY) {
+                if (deltaX > SWIPE_THRESHOLD) {
+                    isNext = true;
+                } else if (deltaX < -SWIPE_THRESHOLD) {
+                    isBack = true;
+                }
+            } else {
+                if (deltaY > SWIPE_THRESHOLD) {
+                    isNext = true;
+                } else if (deltaY < -SWIPE_THRESHOLD) {
+                    isBack = true;
+                }
+            }
+
+            if (isNext) {
+                if (e.cancelable) e.preventDefault();
+                triggerNext();
+            } else if (isBack) {
+                if (e.cancelable) e.preventDefault();
+                void triggerBack();
+            }
+        };
+
+        window.addEventListener("touchstart", onTouchStart, { passive: true });
+        window.addEventListener("touchmove", onTouchMove, { passive: false });
+        window.addEventListener("touchend", onTouchEnd, { passive: false });
+        window.addEventListener("touchcancel", () => { isTouchTracking = false; }, { passive: true });
 
         document.addEventListener('keydown', (e) => {
             const target = e.target as HTMLElement | null;
