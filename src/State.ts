@@ -638,11 +638,193 @@ class State {
             const found = this.trendingVideos.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
         }
+        if (this.lowestVideos) {
+            const found = this.lowestVideos.find((v) => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
         if (this.likedVideos) {
             const found = this.likedVideos.find((v) => v.id === id);
             if (found) return found as VideoWithRelations;
         }
+        if (this.modelVideos) {
+            const found = this.modelVideos.find((v) => v.id === id);
+            if (found) return found as VideoWithRelations;
+        }
+        if (this.newVideos) {
+            const found = this.newVideos.find((v) => v.id === id);
+            if (found) return found as unknown as VideoWithRelations;
+        }
         return null;
+    }
+
+    getActiveVideoPool(section: SectionId = 1): VideoWithRelations[] {
+        if (this.state === "new" && this.newVideos && this.newVideos.length > 0) {
+            return this.newVideos as unknown as VideoWithRelations[];
+        }
+        if ((this.state === "liked" || this.state === "favorite") && this.likedVideos && this.likedVideos.length > 0) {
+            return this.likedVideos;
+        }
+        if (this.state === "trending" && this.trendingVideos && this.trendingVideos.length > 0) {
+            return this.trendingVideos;
+        }
+        if (this.state === "lowest" && this.lowestVideos && this.lowestVideos.length > 0) {
+            return this.lowestVideos;
+        }
+        if (this.state === "model" && this.modelVideos && this.modelVideos.length > 0) {
+            return this.modelVideos as VideoWithRelations[];
+        }
+
+        const sectionTags = this.activeTags.get(section);
+        const hasSectionTags = !!sectionTags && sectionTags.length > 0;
+        if (hasSectionTags) {
+            const tagged = this.taggedVideosBySection.get(section);
+            if (tagged && tagged.length > 0) return tagged as VideoWithRelations[];
+        }
+
+        if (this.allVideos && this.allVideos.length > 0) {
+            return this.allVideos as VideoWithRelations[];
+        }
+        if (this.taggedVideos && this.taggedVideos.length > 0) {
+            return this.taggedVideos as VideoWithRelations[];
+        }
+        return [];
+    }
+
+    recordOrSelectHistoryVideo(videoId: number, section: SectionId = 1): void {
+        if (!videoId || videoId === 0) return;
+        this.positions[section] = videoId;
+        if (this.multiSection && section !== 1) return;
+
+        if (this.historyIndex > 0) {
+            const histIdx = this.history.lastIndexOf(videoId, this.historyIndex - 1);
+            if (histIdx >= 0) {
+                this.historyIndex = histIdx;
+                this.positions[1] = videoId;
+                this.saveHistory();
+                return;
+            }
+        }
+        this.recordPlayedVideo(videoId, section);
+    }
+
+    findDifferentTitledVideoId(
+        currentId: number,
+        section: SectionId = 1,
+        direction: "next" | "prev" = "next"
+    ): number {
+        const pool = this.getActiveVideoPool(section);
+        const cleanPool = (pool || []).filter((v) => !this.isBlacklisted(v));
+        if (!cleanPool || cleanPool.length === 0) return 0;
+
+        const currentVideo = this.getVideoById(currentId) || cleanPool.find((v) => v.id === currentId);
+        const currentTitle = (currentVideo?.title || "").trim().toLowerCase();
+
+        const titledVideos = cleanPool.filter((v) => v.title && String(v.title).trim().length > 0);
+        const hasTitledVideos = titledVideos.length > 0;
+
+        if (this.randomized) {
+            // In random mode: if going back, try to find the previous different titled video from history first
+            if (direction === "prev" && this.historyIndex > 0) {
+                for (let i = this.historyIndex - 1; i >= 0; i--) {
+                    const histId = this.history[i];
+                    const histVid = this.getVideoById(histId) || cleanPool.find((v) => v.id === histId);
+                    const histTitle = (histVid?.title || "").trim().toLowerCase();
+                    const isDiff = hasTitledVideos
+                        ? (histTitle.length > 0 && histTitle !== currentTitle)
+                        : (histTitle !== currentTitle && histId !== currentId);
+
+                    if (isDiff) {
+                        // Scan backward in history to find the start of this title cluster
+                        let targetHistId = histId;
+                        let clusterIdx = i;
+                        while (clusterIdx > 0) {
+                            const priorId = this.history[clusterIdx - 1];
+                            const priorVid = this.getVideoById(priorId) || cleanPool.find((v) => v.id === priorId);
+                            const priorTitle = (priorVid?.title || "").trim().toLowerCase();
+                            if (priorTitle === histTitle) {
+                                clusterIdx--;
+                                targetHistId = priorId;
+                            } else {
+                                break;
+                            }
+                        }
+                        return targetHistId;
+                    }
+                }
+            }
+
+            // Next (or prev if history has no distinct title): pick a random video with a different title
+            let candidates = cleanPool.filter((v) => {
+                const candTitle = (v.title || "").trim().toLowerCase();
+                if (hasTitledVideos) {
+                    return candTitle.length > 0 && candTitle !== currentTitle;
+                }
+                return candTitle !== currentTitle && v.id !== currentId;
+            });
+
+            if (candidates.length === 0 && cleanPool.length > 1) {
+                candidates = cleanPool.filter((v) => v.id !== currentId);
+            }
+
+            if (candidates.length === 0) return 0;
+
+            let unplayed = candidates.filter((v) => !this.played.has(v.id));
+            if (unplayed.length === 0) {
+                unplayed = candidates;
+            }
+
+            const randomIndex = Math.floor(Math.random() * unplayed.length);
+            return unplayed[randomIndex].id;
+        }
+
+        // Sequential mode (!this.randomized)
+        const currentIndex = cleanPool.findIndex((v) => v.id === currentId);
+        const startIndex = currentIndex >= 0 ? currentIndex : 0;
+        const poolLen = cleanPool.length;
+
+        if (direction === "next") {
+            for (let step = 1; step < poolLen; step++) {
+                const idx = (startIndex + step) % poolLen;
+                const cand = cleanPool[idx];
+                const candTitle = (cand.title || "").trim().toLowerCase();
+                const isDiff = hasTitledVideos
+                    ? (candTitle.length > 0 && candTitle !== currentTitle)
+                    : (candTitle !== currentTitle);
+
+                if (isDiff) {
+                    return cand.id;
+                }
+            }
+        } else {
+            for (let step = 1; step < poolLen; step++) {
+                const idx = ((startIndex - step) % poolLen + poolLen) % poolLen;
+                const cand = cleanPool[idx];
+                const candTitle = (cand.title || "").trim().toLowerCase();
+                const isDiff = hasTitledVideos
+                    ? (candTitle.length > 0 && candTitle !== currentTitle)
+                    : (candTitle !== currentTitle);
+
+                if (isDiff) {
+                    // Find the first video of this title cluster when looking backward
+                    let firstIdx = idx;
+                    const targetTitle = candTitle;
+                    for (let lookback = 1; lookback < poolLen; lookback++) {
+                        const prevIdx = ((firstIdx - 1) % poolLen + poolLen) % poolLen;
+                        if (prevIdx === startIndex) break;
+                        const prevCand = cleanPool[prevIdx];
+                        const prevCandTitle = (prevCand.title || "").trim().toLowerCase();
+                        if (prevCandTitle === targetTitle) {
+                            firstIdx = prevIdx;
+                        } else {
+                            break;
+                        }
+                    }
+                    return cleanPool[firstIdx].id;
+                }
+            }
+        }
+
+        return 0;
     }
 
     updateVideoInState(video: VideoWithRelations) {

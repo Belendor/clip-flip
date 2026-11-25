@@ -677,6 +677,66 @@ class Players {
         }
     }
 
+    public async navigateToVideo(targetVideoId: number, section: SectionId = 1) {
+        if (this.pendingSwap[section] || !targetVideoId || targetVideoId === 0) return;
+        this.pendingSwap[section] = true;
+        console.log(`Navigating to video: ${targetVideoId} in section ${section}`);
+
+        try {
+            const [frontIndex, backIndex] = this.getSectionPlayerIndexes(section);
+            const activeIndex = this.state.active[frontIndex] ? frontIndex : backIndex;
+            const nextIndex = activeIndex === frontIndex ? backIndex : frontIndex;
+
+            const currentPlayer = this.html.videoPlayers[activeIndex];
+            const nextPlayer = this.html.videoPlayers[nextIndex];
+
+            this.configurePlayer(nextPlayer, targetVideoId, "auto");
+            const ready = await this.waitForVideoReady(nextPlayer);
+
+            if (ready) {
+                await this.playPlayer(nextPlayer, nextIndex);
+                this.setSectionActivePlayer(section, nextIndex);
+                this.state.playing[nextIndex] = true;
+                this.updatePlayPauseIcon(true);
+                currentPlayer.pause();
+
+                this.state.recordOrSelectHistoryVideo(targetVideoId, section);
+
+                if (!this.state.randomized && typeof window !== "undefined" && window.history?.replaceState) {
+                    const currentUrl = new URL(window.location.href);
+                    if (currentUrl.searchParams.has("id")) {
+                        currentUrl.searchParams.set("id", String(targetVideoId));
+                        window.history.replaceState(null, "", currentUrl.toString());
+                    }
+                }
+
+                this.getVideoMetadata(targetVideoId)
+                    .then((meta) => this.populateMetadataForm(section, meta))
+                    .catch((err) => console.error(err));
+
+                const nextForwardId = this.state.peekNextQueuedVideoId(targetVideoId, section);
+                if (nextForwardId && nextForwardId !== 0) {
+                    this.queuePlayer(currentPlayer, nextForwardId);
+                    void this.waitForVideoReady(currentPlayer);
+                }
+            } else {
+                this.configurePlayer(currentPlayer, targetVideoId, "auto");
+                await this.waitForVideoReady(currentPlayer);
+                await this.playPlayer(currentPlayer, activeIndex);
+                this.state.playing[activeIndex] = true;
+                this.updatePlayPauseIcon(true);
+
+                this.state.recordOrSelectHistoryVideo(targetVideoId, section);
+
+                this.getVideoMetadata(targetVideoId)
+                    .then((meta) => this.populateMetadataForm(section, meta))
+                    .catch((err) => console.error(err));
+            }
+        } finally {
+            this.pendingSwap[section] = false;
+        }
+    }
+
     private attachEventListeners() {
         const navLeft = document.getElementById('nav-left');
         const navCenter = document.getElementById('nav-center');
@@ -707,6 +767,28 @@ class Players {
             }
             const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
             await this.navigateBack(section);
+        };
+
+        const triggerNextTitle = async () => {
+            const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+            const currentId = this.state.positions[section] || 0;
+            const nextVideoId = this.state.findDifferentTitledVideoId(currentId, section, "next");
+            if (nextVideoId && nextVideoId !== 0 && nextVideoId !== currentId) {
+                await this.navigateToVideo(nextVideoId, section);
+            } else {
+                triggerNext();
+            }
+        };
+
+        const triggerPrevTitle = async () => {
+            const section = (this.state.multiSection ? this.focusedSection : 1) as SectionId;
+            const currentId = this.state.positions[section] || 0;
+            const prevVideoId = this.state.findDifferentTitledVideoId(currentId, section, "prev");
+            if (prevVideoId && prevVideoId !== 0 && prevVideoId !== currentId) {
+                await this.navigateToVideo(prevVideoId, section);
+            } else {
+                await triggerBack();
+            }
         };
 
         if (navLeft) {
@@ -903,12 +985,14 @@ class Players {
 
             let isNext = false;
             let isBack = false;
+            let isNextTitle = false;
+            let isPrevTitle = false;
             let outX = '0';
             let outY = '0';
 
-            // User configuration:
-            // Swipe Left or Swipe Up   = Next clip
-            // Swipe Right or Swipe Down = Previous (Back) clip
+            // Mobile gesture mapping:
+            // Horizontal swipe (Left / Right): Next clip / Previous clip
+            // Vertical swipe (Up / Down): Next different title / Previous different title
             if (absX >= absY) {
                 if (deltaX < -SWIPE_THRESHOLD) {
                     isNext = true;
@@ -919,10 +1003,10 @@ class Players {
                 }
             } else {
                 if (deltaY < -SWIPE_THRESHOLD) {
-                    isNext = true;
+                    isNextTitle = true;
                     outY = '-40%';
                 } else if (deltaY > SWIPE_THRESHOLD) {
-                    isBack = true;
+                    isPrevTitle = true;
                     outY = '40%';
                 }
             }
@@ -935,6 +1019,14 @@ class Players {
                 if (e.cancelable) e.preventDefault();
                 animateSlotOut(slotToAnimate, outX, outY);
                 void triggerBack();
+            } else if (isNextTitle) {
+                if (e.cancelable) e.preventDefault();
+                animateSlotOut(slotToAnimate, outX, outY);
+                void triggerNextTitle();
+            } else if (isPrevTitle) {
+                if (e.cancelable) e.preventDefault();
+                animateSlotOut(slotToAnimate, outX, outY);
+                void triggerPrevTitle();
             } else {
                 resetSlotAnimation(slotToAnimate);
             }
@@ -977,6 +1069,14 @@ class Players {
                 navCenter?.click();
             }
             else if (e.key === 'ArrowRight') navRight?.click();
+            else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                void triggerNextTitle();
+            }
+            else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                void triggerPrevTitle();
+            }
         });
 
         this.html.playPauseBtn.addEventListener("click", async () => {
