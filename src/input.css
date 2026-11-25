@@ -2364,6 +2364,101 @@ body {
     box-shadow: 0 8px 20px rgba(87, 166, 255, 0.16);
 }
 
+@media (max-width: 640px) {
+    .ui-wrapper {
+        max-width: min(96vw, 760px);
+        bottom: max(16px, env(safe-area-inset-bottom, 0px) + 10px);
+    }
+
+    .toolbar {
+        min-height: 42px;
+        padding: 4px 6px;
+        gap: 5px;
+    }
+
+    .control-btn-square {
+        min-width: 31px;
+        min-height: 31px;
+        width: 31px;
+        height: 31px;
+        border-radius: 9px;
+    }
+
+    .control-btn-square svg {
+        width: 0.95rem;
+        height: 0.95rem;
+    }
+
+    .search-container {
+        min-width: 80px;
+        max-width: 150px;
+    }
+
+    .search-input-glass {
+        height: 31px;
+        padding: 0 0.6rem 0 1.9rem;
+        font-size: 0.76rem;
+    }
+
+    .search-icon {
+        left: 8px;
+    }
+
+    .search-icon svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .volume-slider-wrapper {
+        width: 32px;
+    }
+}
+
+@media (max-width: 385px) {
+    .ui-wrapper {
+        max-width: 98vw;
+    }
+
+    .toolbar {
+        min-height: 38px;
+        padding: 3px 5px;
+        gap: 3.5px;
+    }
+
+    .control-btn-square {
+        min-width: 28px;
+        min-height: 28px;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+    }
+
+    .control-btn-square svg {
+        width: 0.85rem;
+        height: 0.85rem;
+    }
+
+    .search-container {
+        min-width: 65px;
+        max-width: 110px;
+    }
+
+    .search-input-glass {
+        height: 28px;
+        padding: 0 0.45rem 0 1.6rem;
+        font-size: 0.7rem;
+    }
+
+    .search-icon {
+        left: 6px;
+    }
+
+    .search-icon svg {
+        width: 12px;
+        height: 12px;
+    }
+}
+
 #uploadVideoBtn.is-disabled {
     opacity: 0.38;
     filter: grayscale(60%);
