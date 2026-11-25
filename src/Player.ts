@@ -682,6 +682,23 @@ class Players {
 
         const isInteractiveElement = (el: HTMLElement | null): boolean => {
             if (!el) return false;
+            // Block swipes if any modal or overlay is open
+            if (
+                document.body.classList.contains('modal-open') ||
+                document.getElementById('profile-view')?.classList.contains('hidden') === false ||
+                document.getElementById('model-view')?.classList.contains('hidden') === false ||
+                document.querySelector('.nsfw-overlay') !== null ||
+                document.querySelector('.cf-confirm-modal') !== null
+            ) {
+                return true;
+            }
+            if (
+                el.closest(
+                    "#profile-view, .profile-view, .profile-modal, #model-view, .model-view, .model-modal, .nsfw-overlay, .nsfw-modal, .cf-confirm-modal, .login-prompt-toast, #top-toolbar, .toolbar, .tag-container, .metadata-tag-list, .metadata-form, .upload-form, #search-modal, .search-modal, #user-dropdown, .user-dropdown-menu"
+                )
+            ) {
+                return true;
+            }
             return Boolean(
                 el.tagName === "INPUT" ||
                 el.tagName === "TEXTAREA" ||
@@ -689,7 +706,7 @@ class Players {
                 el.tagName === "BUTTON" ||
                 el.tagName === "A" ||
                 el.isContentEditable ||
-                el.closest("input, textarea, select, button, a, [contenteditable='true'], .metadata-form, .upload-form, .model-view, .cf-confirm-modal, .login-prompt-toast, #top-toolbar, .toolbar, .tag-container, .metadata-tag-list")
+                el.closest("input, textarea, select, button, a, [contenteditable='true']")
             );
         };
 

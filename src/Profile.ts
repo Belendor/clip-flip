@@ -105,6 +105,14 @@ export default class Profile {
             document.body.appendChild(this.container);
         }
 
+        // Prevent touch swipe events inside profile modal from triggering background Player swipe navigation
+        const stopTouchBubble = (e: TouchEvent) => {
+            e.stopPropagation();
+        };
+        this.container.addEventListener("touchstart", stopTouchBubble, { passive: true });
+        this.container.addEventListener("touchmove", stopTouchBubble, { passive: true });
+        this.container.addEventListener("touchend", stopTouchBubble, { passive: true });
+
         // Wire User dropdown "My Profile" click
         this.user.onNavigateProfile = () => {
             this.open();
@@ -137,6 +145,7 @@ export default class Profile {
 
     public open(pushHistory: boolean = true) {
         this.isOpen = true;
+        document.body.classList.add("modal-open");
         if (this.container) {
             this.container.classList.remove("hidden");
         }
@@ -157,6 +166,7 @@ export default class Profile {
 
     public close(pushHistory: boolean = true) {
         this.isOpen = false;
+        document.body.classList.remove("modal-open");
         if (this.container) {
             this.container.classList.add("hidden");
             this.container.innerHTML = "";
@@ -398,7 +408,7 @@ export default class Profile {
 
         return `
             <div class="profile-section mt-4">
-                <div class="flex items-center justify-between mb-2">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
                     <h3 class="profile-section-title mb-0 flex items-center gap-2">
                         <span>🛡️</span> Content Preferences & Tag Filter
                     </h3>
@@ -426,7 +436,7 @@ export default class Profile {
                         </p>
                     </div>
 
-                    <div class="profile-pref-buttons flex items-center gap-2">
+                    <div class="profile-pref-buttons">
                         <button type="button" class="profile-pref-btn ${isStraight ? 'active' : ''}" id="pref-btn-straight" data-pref="straight">
                             👩‍❤️‍👨 Straight
                         </button>

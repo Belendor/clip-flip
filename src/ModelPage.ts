@@ -38,6 +38,14 @@ export default class ModelPage {
             document.body.appendChild(this.container);
         }
 
+        // Prevent touch swipe propagation from bubbling to Player swipe handlers
+        const stopTouchBubble = (e: TouchEvent) => {
+            e.stopPropagation();
+        };
+        this.container.addEventListener("touchstart", stopTouchBubble, { passive: true });
+        this.container.addEventListener("touchmove", stopTouchBubble, { passive: true });
+        this.container.addEventListener("touchend", stopTouchBubble, { passive: true });
+
         // Popstate & hashchange handlers for browser navigation
         window.addEventListener("popstate", () => {
             this.checkRoute();
@@ -76,6 +84,7 @@ export default class ModelPage {
     public open(modelName: string, pushHistory: boolean = true) {
         this.isOpen = true;
         this.currentModelName = modelName.trim();
+        document.body.classList.add("modal-open");
         if (this.container) {
             this.container.classList.remove("hidden");
         }
@@ -98,6 +107,7 @@ export default class ModelPage {
     public close(pushHistory: boolean = true) {
         this.isOpen = false;
         this.currentModelName = null;
+        document.body.classList.remove("modal-open");
         if (this.container) {
             this.container.classList.add("hidden");
             this.container.innerHTML = "";
