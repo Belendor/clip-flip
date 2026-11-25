@@ -35,6 +35,13 @@ export default class VideoApi {
         });
     }
 
+    async fetchTagDetails(name: string): Promise<{ id: number; name: string; title: string; videoCount: number; videos: VideoWithRelations[] }> {
+        return this.request(`/tags/${encodeURIComponent(name)}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
     async saveModel(data: { name: string; source?: string | null; alias?: string | null }): Promise<Model> {
         return this.request<Model>(`/models`, {
             method: "POST",

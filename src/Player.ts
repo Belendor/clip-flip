@@ -6,6 +6,7 @@ import type { Tag, Video, VideoWithRelations, UpdateVideoPayload, NewVideo } fro
 import User from "./User";
 import { isNsfwAccepted, showNsfwModal } from "./NsfwModal";
 import ModelPage from "./ModelPage";
+import TagPage from "./TagPage";
 
 type SectionSwapState = Record<SectionId, boolean>;
 
@@ -16,6 +17,7 @@ class Players {
     private readonly lastPopulatedVideoId = new Map<SectionId, number>();
     private isSwitchingMode = false;
     private modelPage?: ModelPage;
+    private tagPage?: TagPage;
 
     private loadRevision = 0;
     private sectionLoadRevision: Record<SectionId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -415,18 +417,25 @@ class Players {
     }
 
     public isModalOrOverlayActive(): boolean {
-        const isModelRoute = typeof window !== "undefined" && (
+        const isRouteActive = typeof window !== "undefined" && (
             window.location.pathname.startsWith("/model/") ||
             window.location.hash.startsWith("#model/") ||
-            window.location.hash.startsWith("#/model/")
+            window.location.hash.startsWith("#/model/") ||
+            window.location.pathname.startsWith("/tag/") ||
+            window.location.hash.startsWith("#tag/") ||
+            window.location.hash.startsWith("#/tag/")
         );
         const isModelOpen = Boolean(
             this.modelPage?.isModelOpen() ||
             (typeof document !== "undefined" && document.getElementById("model-view")?.classList.contains("hidden") === false)
         );
+        const isTagOpen = Boolean(
+            this.tagPage?.isTagOpen() ||
+            (typeof document !== "undefined" && document.getElementById("tag-view")?.classList.contains("hidden") === false)
+        );
         const isProfileOpen = typeof document !== "undefined" &&
             document.getElementById("profile-view")?.classList.contains("hidden") === false;
-        return Boolean(isModelRoute || isModelOpen || isProfileOpen);
+        return Boolean(isRouteActive || isModelOpen || isTagOpen || isProfileOpen);
     }
 
     public pauseAll() {
@@ -1328,6 +1337,27 @@ class Players {
             activeBadge.textContent = "✓ Active";
             card.appendChild(activeBadge);
 
+            // Corner "out" button leading to the Tag Page
+            const outBtn = document.createElement("a");
+            outBtn.href = `/tag/${encodeURIComponent(tag.title)}`;
+            outBtn.className = "tag-card-out-btn";
+            outBtn.title = `Open #${tag.title} page`;
+            outBtn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+            `;
+            outBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                advancedPanel.classList.add("hidden");
+                searchInput.blur();
+                this.openTagPage(tag.title);
+            });
+            card.appendChild(outBtn);
+
             card.addEventListener("click", async (e) => {
                 e.stopPropagation();
                 advancedPanel.classList.add("hidden");
@@ -2166,6 +2196,35 @@ class Players {
 
     public openModelPage(modelName: string) {
         this.modelPage?.open(modelName);
+    }
+
+    public setTagPage(page: TagPage) {
+        this.tagPage = page;
+    }
+
+    public openTagPage(tagName: string) {
+        this.tagPage?.open(tagName);
+    }
+
+    public async playFromTag(tagName: string, startVideoId?: number) {
+        this.state.resetActiveTags();
+        this.state.activeTags.set(1, [tagName]);
+        this.state.state = "random";
+        this.state.randomized = false;
+        this.showLoader(`Loading #${tagName} clips...`);
+        await this.state.fetchVideosByTags(1);
+        if (startVideoId) {
+            this.state.positions = {
+                1: startVideoId,
+                2: startVideoId,
+                3: startVideoId,
+                4: startVideoId,
+            };
+        }
+        this.html.init();
+        this.html.metadata.init();
+        this.attachMetadataTabListeners();
+        await this.loadVideos(true);
     }
 
     public async switchMode(

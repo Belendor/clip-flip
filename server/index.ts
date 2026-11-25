@@ -647,6 +647,7 @@ app.get("/videos", async (req: Request, res: Response) => {
   const search = req.query.search?.toString() || "";
   const sort = req.query.sort?.toString() || "";
   const modelQuery = req.query.model?.toString()?.trim() || "";
+  const tagQuery = req.query.tag?.toString()?.trim() || "";
   const rawUserId = req.cookies.userId || req.headers["x-user-id"];
   const userId = Number(rawUserId);
 
@@ -663,6 +664,13 @@ app.get("/videos", async (req: Request, res: Response) => {
     whereClause.models = {
       some: {
         name: { equals: modelQuery },
+      },
+    };
+  }
+  if (tagQuery) {
+    whereClause.tags = {
+      some: {
+        title: { equals: tagQuery },
       },
     };
   }
@@ -821,6 +829,68 @@ app.get('/tags', async (req, res) => {
   }
 });
 
+app.get('/tags/:name', async (req: Request, res: Response) => {
+  try {
+    const rawName = decodeURIComponent(req.params.name).trim();
+    const rawUserId = req.cookies.userId || req.headers["x-user-id"];
+    const userId = Number(rawUserId);
+
+    const tag = await prisma.tag.findFirst({
+      where: {
+        title: { equals: rawName },
+      },
+      include: {
+        videos: {
+          include: {
+            tags: true,
+            models: true,
+            reactions: {
+              select: {
+                userId: true,
+                type: true,
+              },
+            },
+          },
+          orderBy: { id: "asc" },
+        },
+      },
+    });
+
+    if (!tag) {
+      return res.status(404).json({ error: "Tag not found" });
+    }
+
+    const mappedVideos = tag.videos.map((video) => {
+      const likes = video.reactions.filter((r) => r.type === "like").length;
+      const dislikes = video.reactions.filter((r) => r.type === "dislike").length;
+      const myReaction = userId
+        ? video.reactions.find((r) => r.userId === userId)?.type ?? null
+        : null;
+
+      return {
+        ...video,
+        likes,
+        dislikes,
+        myReaction,
+        reactions: video.reactions,
+      };
+    });
+
+    const sequenceOrderedVideos = sortVideosPreservingSequence(mappedVideos);
+
+    res.json({
+      id: tag.id,
+      name: tag.title.trim(),
+      title: tag.title.trim(),
+      videoCount: sequenceOrderedVideos.length,
+      videos: sequenceOrderedVideos,
+    });
+  } catch (error) {
+    console.error('Error fetching tag by name:', error);
+    res.status(500).json({ error: 'Failed to fetch tag' });
+  }
+});
+
 app.get('/models', async (req: Request, res: Response) => {
   try {
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
@@ -975,8 +1045,8 @@ app.get('/sitemap.xml', async (req: Request, res: Response) => {
     for (const t of tags) {
       const cleanTag = t.title.trim();
       if (!cleanTag) continue;
-      const tagUrl = `${baseUrl}/?tag=${encodeURIComponent(cleanTag)}`;
-      xml += `  <url>\n    <loc>${tagUrl}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>\n`;
+      const tagUrl = `${baseUrl}/tag/${encodeURIComponent(cleanTag)}`;
+      xml += `  <url>\n    <loc>${tagUrl}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
     }
 
     xml += `</urlset>`;
@@ -1085,6 +1155,92 @@ ${JSON.stringify(schemaData, null, 2)}
     return res.send(html);
   } catch (error) {
     console.error("Error serving model page:", error);
+    const fallbackPath = fsSync.existsSync("/var/www/clipflip/index.html")
+      ? "/var/www/clipflip/index.html"
+      : path.resolve(__dirname, "../index.html");
+    return res.sendFile(fallbackPath);
+  }
+});
+
+// Server-Side Rendered Meta & OpenGraph tags for tag pages (Googlebot & Social Cards)
+app.get('/tag/:name', async (req: Request, res: Response) => {
+  try {
+    const rawName = decodeURIComponent(req.params.name).trim();
+    const tag = await prisma.tag.findFirst({
+      where: { title: { equals: rawName } },
+      include: {
+        videos: {
+          take: 1,
+          select: { id: true, title: true },
+          orderBy: { id: "asc" },
+        },
+        _count: { select: { videos: true } },
+      },
+    });
+
+    const candidatePaths = [
+      "/var/www/clipflip/index.html",
+      path.resolve(__dirname, "../index.html"),
+      path.resolve(process.cwd(), "index.html"),
+    ];
+    const indexPath = candidatePaths.find((p) => fsSync.existsSync(p));
+
+    if (!indexPath) {
+      return res.status(404).send("index.html not found");
+    }
+
+    let html = fsSync.readFileSync(indexPath, "utf-8");
+
+    if (tag) {
+      const cleanName = tag.title.trim();
+      const count = tag._count?.videos || 0;
+      const countLabel = count > 0 ? ` (${count} Clips)` : "";
+      const capitalized = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+      const pageTitle = `${capitalized}${countLabel} - Free Video Clips & Sets | ClipFlip`;
+      const pageDesc = `Watch uninterrupted ${cleanName} video clips and sets on ClipFlip with zero buffering. Filter by tags, continuous playback, no signup required.`;
+      const pageUrl = `https://clip-flip.com/tag/${encodeURIComponent(cleanName)}`;
+      const firstVid = tag.videos?.[0];
+      const thumbUrl = firstVid
+        ? `https://clip-flip.com/thumbnails/${firstVid.id}_middle.jpg`
+        : `https://clip-flip.com/thumbnail.jpg`;
+
+      // Replace generic meta tags with tag-specific ones
+      html = html.replace(/<title>.*?<\/title>/i, `<title>${pageTitle}</title>`);
+      html = html.replace(/<meta name="description" content=".*?"\/?>/i, `<meta name="description" content="${pageDesc}">`);
+      html = html.replace(/<meta property="og:title" content=".*?"\/?>/i, `<meta property="og:title" content="${pageTitle}">`);
+      html = html.replace(/<meta property="og:description" content=".*?"\/?>/i, `<meta property="og:description" content="${pageDesc}">`);
+      html = html.replace(/<meta property="og:url" content=".*?"\/?>/i, `<meta property="og:url" content="${pageUrl}">`);
+      html = html.replace(/<meta property="og:image" content=".*?"\/?>/i, `<meta property="og:image" content="${thumbUrl}">`);
+      html = html.replace(/<meta name="twitter:title" content=".*?"\/?>/i, `<meta name="twitter:title" content="${pageTitle}">`);
+      html = html.replace(/<meta name="twitter:description" content=".*?"\/?>/i, `<meta name="twitter:description" content="${pageDesc}">`);
+      html = html.replace(/<meta name="twitter:image" content=".*?"\/?>/i, `<meta name="twitter:image" content="${thumbUrl}">`);
+
+      // Add canonical URL and JSON-LD CollectionPage Schema for Google indexing
+      const schemaData = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": pageTitle,
+        "description": pageDesc,
+        "url": pageUrl,
+        "about": {
+          "@type": "Thing",
+          "name": cleanName,
+        },
+      };
+
+      const seoInjection = `
+    <link rel="canonical" href="${pageUrl}">
+    <script type="application/ld+json">
+${JSON.stringify(schemaData, null, 2)}
+    </script>
+`;
+      html = html.replace("</head>", `${seoInjection}</head>`);
+    }
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(html);
+  } catch (error) {
+    console.error("Error serving tag page:", error);
     const fallbackPath = fsSync.existsSync("/var/www/clipflip/index.html")
       ? "/var/www/clipflip/index.html"
       : path.resolve(__dirname, "../index.html");

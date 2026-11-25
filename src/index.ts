@@ -5,6 +5,7 @@ import User from "./User";
 import VideoApi from './VideoApi';
 import Profile from './Profile';
 import ModelPage from './ModelPage';
+import TagPage from './TagPage';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const api = new VideoApi();
@@ -30,6 +31,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     );
     players.setModelPage(modelPage);
+
+    const tagPage = new TagPage(
+        api,
+        state,
+        async (tagName: string, videoId: number) => {
+            await players.playFromTag(tagName, videoId);
+        },
+        () => {
+            // Pause players on tag page open
+            players.pauseAll();
+        },
+        () => {
+            // Callback on tag page close
+        }
+    );
+    players.setTagPage(tagPage);
 
     new Profile(
         user,
